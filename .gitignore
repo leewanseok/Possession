@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.log
+kis_token.json
+alert_state.json
+config.json
+price_cache.json
+us_price_cache.json
+chart_cache/
+ngrok_out.txt
+ngrok_err.txt
