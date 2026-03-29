@@ -29,7 +29,8 @@ US_HISTORY_FILE      = os.path.join(_BASE_DIR, "us_history.json")
 US_PRICE_CACHE_FILE  = os.path.join(_BASE_DIR, "us_price_cache.json")
 US_OPEN_ALERT_FILE   = os.path.join(_BASE_DIR, "us_open_alert.json")
 US_CLOSE_ALERT_FILE  = os.path.join(_BASE_DIR, "us_close_alert.json")
-COIN_HISTORY_FILE    = os.path.join(_BASE_DIR, "coin_history.json")
+COIN_HISTORY_FILE     = os.path.join(_BASE_DIR, "coin_history.json")
+COMBINED_HISTORY_FILE = os.path.join(_BASE_DIR, "combined_history.json")
 os.makedirs(CHART_CACHE_DIR, exist_ok=True)
 
 # NYSE/NASDAQ 주요 휴장일
@@ -2324,6 +2325,8 @@ def _price_loop():
             if data.get("us", {}).get("holdings"):
                 _check_us_open_alert(data)
                 _check_us_close_alert(data)
+            # 종합 일별 스냅샷 (22:00 이후, 주말 포함)
+            threading.Thread(target=_save_combined_daily_snapshot, daemon=True).start()
             # 전 거래일 데이터 누락 시 자동 배치 (백그라운드)
             threading.Thread(target=_auto_batch_if_needed, daemon=True).start()
         except Exception as e:
@@ -3625,6 +3628,106 @@ def _save_coin_daily_snapshot():
     except Exception as e:
         print(f"[코인 스냅샷] 오류: {e}")
 
+def _load_combined_history():
+    if os.path.exists(COMBINED_HISTORY_FILE):
+        try:
+            with open(COMBINED_HISTORY_FILE, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"records": []}
+
+def _save_combined_history(data: dict):
+    with open(COMBINED_HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+_combined_snapshot_done_date = None  # 당일 종합 배치 실행 여부
+
+def _save_combined_daily_snapshot():
+    """매일 09:00~09:10 KST 종합 스냅샷 저장 (주말·휴장일 포함).
+    코인 배치(익일 09:00)와 동일 시간대에 실행하여 전날(yesterday) 데이터를 저장.
+    - 국내/미국: 전날 이하의 가장 최근 레코드 사용 (휴장일이면 마지막 거래일 값)
+    - 코인: coin_history.json의 전날 레코드 사용 (코인 배치가 저장한 값)
+    """
+    global _combined_snapshot_done_date
+    now       = datetime.now()
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # 하루 1회 (09:00~09:10 사이)
+    if not (dtime(9, 0) <= now.time() < dtime(9, 10)):
+        return
+    if _combined_snapshot_done_date == yesterday:
+        return
+
+    # KR: 전날 이하 가장 최근 non-realtime 레코드
+    kr_recs = _load_history().get("records", [])
+    kr = next(
+        (r for r in kr_recs if not r.get("realtime") and r.get("date", "") <= yesterday),
+        kr_recs[0] if kr_recs else {}
+    )
+    kr_buy    = kr.get("total_buy", 0)
+    kr_eval   = kr.get("total_eval", 0)
+    kr_profit = kr.get("total_profit", 0)
+    kr_date   = kr.get("date", "")
+
+    # US: 전날 이하 가장 최근 레코드
+    us_recs = _load_us_history().get("records", [])
+    us = next(
+        (r for r in us_recs if r.get("date", "") <= yesterday),
+        us_recs[0] if us_recs else {}
+    )
+    us_buy    = us.get("total_buy_krw", 0)
+    us_eval   = us.get("total_eval_krw", 0)
+    us_profit = us.get("total_profit_krw", 0)
+    us_date   = us.get("date", "")
+
+    # Coin: coin_history.json의 전날 레코드 (코인 배치 09:00 결과)
+    coin_recs = _load_coin_history().get("records", [])
+    coin = next((r for r in coin_recs if r.get("date") == yesterday), None)
+    if not coin:
+        print(f"[종합 히스토리] {yesterday} 코인 레코드 없음 — 스킵 (코인 배치 완료 후 재시도 필요)")
+        return
+    coin_buy    = coin.get("total_buy", 0)
+    coin_eval   = coin.get("total_eval", 0)
+    coin_profit = coin.get("total_profit", 0)
+
+    total_buy    = kr_buy + us_buy + coin_buy
+    total_eval   = kr_eval + us_eval + coin_eval
+    total_profit = kr_profit + us_profit + coin_profit
+    total_rate   = round(total_profit / total_buy * 100, 2) if total_buy else 0.0
+
+    combined_data = _load_combined_history()
+    recs = combined_data.get("records", [])
+
+    # 전날 레코드 이미 존재하면 덮어씀
+    recs = [r for r in recs if r.get("date") != yesterday]
+
+    prev_rec     = next((r for r in recs if r.get("date", "") < yesterday), None)
+    prev_eval    = prev_rec.get("total_eval", 0) if prev_rec else 0
+    daily_change = round(total_eval - prev_eval) if prev_eval else 0
+
+    record = {
+        "date":         yesterday,
+        "total_buy":    round(total_buy),
+        "total_eval":   round(total_eval),
+        "total_profit": round(total_profit),
+        "total_rate":   total_rate,
+        "daily_change": daily_change,
+        "kr_eval":      round(kr_eval),
+        "us_eval":      round(us_eval),
+        "coin_eval":    round(coin_eval),
+        "kr_date":      kr_date,
+        "us_date":      us_date,
+    }
+    recs.insert(0, record)
+    recs.sort(key=lambda r: r["date"], reverse=True)
+    _save_combined_history({"records": recs})
+    _combined_snapshot_done_date = yesterday
+    print(f"[종합 히스토리] {yesterday} 저장 완료 "
+          f"(KR={kr_date}, US={us_date}, 합계={round(total_eval):,}원)")
+    return True
+
+
 def _check_coin_rate_alerts(holdings: list):
     """코인 전일대비 등락률 5%·10%·15%… 임계값 최초 도달 시 텔레그램 알림"""
     now_ts = time.time()
@@ -3936,6 +4039,68 @@ def api_coin_delete():
 def api_coin_snapshot():
     _save_coin_daily_snapshot()
     return jsonify({"ok": True})
+
+@app.route("/api/combined/history")
+def api_combined_history():
+    return jsonify(_load_combined_history().get("records", []))
+
+@app.route("/api/combined/snapshot", methods=["POST"])
+def api_combined_snapshot():
+    """종합 스냅샷 수동 저장 (시간 제한 없이 즉시 저장 — 전날 날짜 기준).
+    날짜 파라미터: ?date=YYYY-MM-DD (생략 시 어제)
+    """
+    global _combined_snapshot_done_date
+    now = datetime.now()
+    target_date = request.args.get("date") or (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    _combined_snapshot_done_date = None   # 플래그 초기화 → 재저장 허용
+
+    # KR: target_date 이하 가장 최근 non-realtime 레코드
+    kr_recs = _load_history().get("records", [])
+    kr = next(
+        (r for r in kr_recs if not r.get("realtime") and r.get("date", "") <= target_date),
+        kr_recs[0] if kr_recs else {}
+    )
+    # US: target_date 이하 가장 최근 레코드
+    us_recs = _load_us_history().get("records", [])
+    us = next(
+        (r for r in us_recs if r.get("date", "") <= target_date),
+        us_recs[0] if us_recs else {}
+    )
+    # Coin: coin_history.json의 target_date 레코드
+    coin_recs = _load_coin_history().get("records", [])
+    coin = next((r for r in coin_recs if r.get("date") == target_date), None)
+    if not coin:
+        return jsonify({"error": f"{target_date} 코인 레코드 없음"}), 400
+
+    kr_buy    = kr.get("total_buy", 0);    us_buy    = us.get("total_buy_krw", 0)
+    kr_eval   = kr.get("total_eval", 0);   us_eval   = us.get("total_eval_krw", 0)
+    kr_profit = kr.get("total_profit", 0); us_profit = us.get("total_profit_krw", 0)
+    coin_buy  = coin.get("total_buy", 0);  coin_eval = coin.get("total_eval", 0)
+    coin_profit = coin.get("total_profit", 0)
+
+    total_buy    = kr_buy + us_buy + coin_buy
+    total_eval   = kr_eval + us_eval + coin_eval
+    total_profit = kr_profit + us_profit + coin_profit
+    total_rate   = round(total_profit / total_buy * 100, 2) if total_buy else 0.0
+
+    combined_data = _load_combined_history()
+    recs = [r for r in combined_data.get("records", []) if r.get("date") != target_date]
+    prev_rec     = next((r for r in recs if r.get("date", "") < target_date), None)
+    prev_eval    = prev_rec.get("total_eval", 0) if prev_rec else 0
+    daily_change = round(total_eval - prev_eval) if prev_eval else 0
+
+    record = {
+        "date": target_date, "total_buy": round(total_buy), "total_eval": round(total_eval),
+        "total_profit": round(total_profit), "total_rate": total_rate,
+        "daily_change": daily_change,
+        "kr_eval": round(kr_eval), "us_eval": round(us_eval), "coin_eval": round(coin_eval),
+        "kr_date": kr.get("date", ""), "us_date": us.get("date", ""),
+    }
+    recs.insert(0, record)
+    recs.sort(key=lambda r: r["date"], reverse=True)
+    _save_combined_history({"records": recs})
+    _combined_snapshot_done_date = target_date
+    return jsonify({"ok": True, "date": target_date, "total_eval": round(total_eval)})
 
 
 if __name__ == "__main__":

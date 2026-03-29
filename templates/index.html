@@ -170,8 +170,20 @@
   #us-portfolio-table th:nth-child(13), #us-portfolio-table td:nth-child(13) { white-space: nowrap; padding-left: 4px; padding-right: 6px; }  /* 관리 */
   #us-portfolio-table .edit-btn, #us-portfolio-table .del-btn { padding: 3px 8px; }
 
-  /* 코인 수익률/관리 컬럼 */
-  #coin-portfolio-table th:nth-child(11), #coin-portfolio-table td:nth-child(11) { min-width: 100px; max-width: 130px; }  /* 수익률 */
+  /* 종합 보유종목 숫자 컬럼: 자릿수 변화 시 레이아웃 흔들림 방지 */
+  #all-holdings-table td:nth-child(4)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 현재가 */
+  #all-holdings-table td:nth-child(5)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 전일대비 */
+  #all-holdings-table td:nth-child(6)  { min-width:  70px; font-variant-numeric: tabular-nums; }  /* 등락률 */
+  #all-holdings-table td:nth-child(7)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 평가금액 */
+  #all-holdings-table td:nth-child(8)  { min-width: 120px; font-variant-numeric: tabular-nums; }  /* 평가손익 */
+  #all-holdings-table td:nth-child(9)  { min-width: 100px; font-variant-numeric: tabular-nums; }  /* 수익률 */
+
+  /* 코인 숫자 컬럼: 자릿수 변화 시 레이아웃 흔들림 방지 */
+  #coin-portfolio-table td:nth-child(7)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 전일대비 */
+  #coin-portfolio-table td:nth-child(8)  { min-width:  70px; font-variant-numeric: tabular-nums; }  /* 등락률 */
+  #coin-portfolio-table td:nth-child(9)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 평가금액 */
+  #coin-portfolio-table td:nth-child(10) { min-width: 120px; font-variant-numeric: tabular-nums; }  /* 평가손익 */
+  #coin-portfolio-table th:nth-child(11), #coin-portfolio-table td:nth-child(11) { min-width: 100px; max-width: 130px; font-variant-numeric: tabular-nums; }  /* 수익률 */
   #coin-portfolio-table th:nth-child(12), #coin-portfolio-table td:nth-child(12) { white-space: nowrap; }
 
   /* ── 검색 ── */
@@ -642,6 +654,7 @@
     <button class="tab-btn active" onclick="switchTab('kr',this)"><img src="https://flagcdn.com/20x15/kr.png" style="vertical-align:middle;margin-right:5px"> 국내</button>
     <button class="tab-btn" onclick="switchTab('us',this)"><img src="https://flagcdn.com/20x15/us.png" style="vertical-align:middle;margin-right:5px"> 미국</button>
     <button class="tab-btn" onclick="switchTab('coin',this)"><img src="/static/bitcoin.png" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;margin-bottom:2px"> 코인</button>
+    <button class="tab-btn" onclick="switchTab('all',this)">📊 종합</button>
   </div>
 
   <!-- ═══════════════════════════════════════════ 국내 탭 -->
@@ -956,6 +969,7 @@
     <!-- 총 평가금액 추이 차트 (미국) -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:24px">
       <div class="section-title" style="margin:0">총 평가금액 추이 (원화)</div>
+      <div id="us-eval-chart-unit" style="display:none;font-size:11px;color:#8892a4">(단위:천원)</div>
     </div>
     <div id="us-eval-chart-wrap" style="display:none;background:#131620;border-radius:6px;border:1px solid #2e3250;overflow:hidden;margin-top:10px">
       <div id="us-eval-chart" style="width:100%;height:240px"></div>
@@ -1098,12 +1112,113 @@
     <!-- 총 평가금액 추이 차트 (코인) -->
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:24px">
       <div class="section-title" style="margin:0">총 평가금액 추이</div>
+      <div id="coin-eval-chart-unit" style="display:none;font-size:11px;color:#8892a4">(단위:천원)</div>
     </div>
     <div id="coin-eval-chart-wrap" style="display:none;background:#131620;border-radius:6px;border:1px solid #2e3250;overflow:hidden;margin-top:10px">
       <div id="coin-eval-chart" style="width:100%;height:240px"></div>
     </div>
 
   </div><!-- /tab-coin -->
+
+  <!-- ═══════════════════════════════════════════ 종합 탭 -->
+  <div class="tab-panel" id="tab-all">
+
+    <!-- 요약 카드 -->
+    <div class="summary-grid" id="all-summary-cards">
+      <div class="card">
+        <div class="label">총 매입금액 (합계)</div>
+        <div class="value" id="all-s-buy">-</div>
+      </div>
+      <div class="card">
+        <div class="label">총 평가금액 (합계)</div>
+        <div class="value gold" id="all-s-eval">-</div>
+      </div>
+      <div class="card">
+        <div class="label">총 평가손익 (합계)</div>
+        <div class="value" id="all-s-profit">-</div>
+        <div class="sub" id="all-s-profit-rate">-</div>
+      </div>
+      <div class="card">
+        <div class="label">보유 종목 수</div>
+        <div class="value" id="all-s-count">-</div>
+        <div class="sub" id="all-s-count-detail" style="color:var(--text2)">-</div>
+      </div>
+    </div>
+
+    <!-- 보유 종목 (국내 + 미국 + 코인) -->
+    <div class="section-title" style="display:flex;align-items:center;gap:12px">
+      <span>보유 종목 (국내 → 미국 → 코인)</span>
+      <span id="all-usd-rate" style="font-size:12px;font-weight:400;color:var(--text2);font-variant-numeric:tabular-nums"></span>
+    </div>
+    <div class="table-wrap">
+      <table id="all-holdings-table">
+        <thead>
+          <tr>
+            <th>구분</th>
+            <th>종목명</th>
+            <th class="hide-mobile">매입금액</th>
+            <th>현재가</th>
+            <th>전일대비</th>
+            <th>등락률</th>
+            <th>평가금액</th>
+            <th>평가손익</th>
+            <th>수익률</th>
+          </tr>
+        </thead>
+        <tbody id="all-holdings-body">
+          <tr><td colspan="9" class="empty">로딩 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 일별 손익 (종합) -->
+    <div style="display:flex;align-items:center;gap:6px;margin-top:24px;margin-bottom:8px;flex-wrap:nowrap">
+      <div class="section-title" style="margin:0;flex-shrink:0">일별 손익 (종합)</div>
+      <div style="display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0;flex-wrap:nowrap">
+        <button class="btn btn-sm history-period-btn active" onclick="setAllHistoryPeriod(1,this)" style="white-space:nowrap;padding:3px 8px">1개월</button>
+        <button class="btn btn-sm history-period-btn" onclick="setAllHistoryPeriod(3,this)" style="white-space:nowrap;padding:3px 8px">3개월</button>
+        <span style="display:flex;align-items:center;gap:4px">
+          <input type="date" id="all-history-from" class="history-date-input" style="background:#1e2236;color:var(--text1);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px;width:95px;min-width:0">
+          <span style="font-size:12px;color:var(--text2)">~</span>
+          <input type="date" id="all-history-to" class="history-date-input" style="background:#1e2236;color:var(--text1);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px;width:95px;min-width:0">
+          <button class="btn btn-sm" onclick="applyAllHistoryRange()" style="white-space:nowrap;padding:3px 8px;flex-shrink:0">조회</button>
+        </span>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align:left">날짜</th>
+            <th>총 매입금액</th>
+            <th>총 평가금액</th>
+            <th>총 평가손익</th>
+            <th>수익률</th>
+            <th>전일대비 손익</th>
+          </tr>
+        </thead>
+        <tbody id="all-history-body">
+          <tr><td colspan="6" class="empty">기록 없음</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 총 평가금액 추이 차트 (종합) -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:24px">
+      <div class="section-title" style="margin:0">총 평가금액 추이</div>
+      <div id="all-eval-chart-unit" style="display:none;font-size:11px;color:#8892a4">(단위:천원)</div>
+    </div>
+    <div id="all-eval-chart-wrap" style="display:none;background:#131620;border-radius:6px;border:1px solid #2e3250;overflow:hidden;margin-top:10px;position:relative">
+      <div id="all-eval-chart" style="width:100%;height:260px"></div>
+      <div id="all-chart-legend" style="position:absolute;top:8px;left:12px;display:flex;gap:12px;pointer-events:none;z-index:10;background:rgba(19,22,32,0.6);padding:3px 8px;border-radius:4px">
+        <span style="font-size:11px;color:#4f80ff;font-weight:600">● 합계</span>
+        <span style="font-size:11px;color:#f04e5e;font-weight:600">● 국내</span>
+        <span style="font-size:11px;color:#f5c842;font-weight:600">● 미국</span>
+        <span style="font-size:11px;color:#f7931a;font-weight:600">● 코인</span>
+      </div>
+    </div>
+
+  </div><!-- /tab-all -->
 
 </div>
 
@@ -1313,7 +1428,7 @@ function _isUsTradingNow() {
 const fmtKR  = n => Math.round(Number(n)).toLocaleString('ko-KR');
 const fmtUS  = n => Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 const fmt    = (n, isUS) => isUS ? fmtUS(n) : fmtKR(n);
-const fmtRate = r => { const v = parseFloat(r); return (v > 0 ? '+' : '') + v.toFixed(2) + '%'; };
+const fmtRate = r => { const v = parseFloat(r); return (v > 0 ? '+' : v < 0 ? '-' : '') + Math.abs(v).toFixed(2) + '%'; };
 const cls    = v => parseFloat(v) > 0 ? 'up' : parseFloat(v) < 0 ? 'down' : 'flat';
 const suffix = isUS => isUS ? ' USD' : '원';
 
@@ -1338,6 +1453,7 @@ function connectSSE() {
       document.getElementById('last-update').textContent = data.updated_at || '';
       updateChartRealtime(data);
       updateHistoryRealtime(data);
+      if (document.getElementById('tab-all').classList.contains('active')) renderAllTab();
       _setStatus('#44cc88', '실시간');
       const interval = Math.max(1, data.refresh_interval || 3) * 1000;
       _pollTimer = setTimeout(poll, interval);
@@ -1421,7 +1537,7 @@ function renderPortfolio(data) {
       <td class="${cls(item.change)}">${item.change >= 0 ? '+' : ''}${fmt(item.change, isUS)}${sfx}</td>
       <td class="${cls(cr)}">${fmtRate(cr)}</td>
       <td>${fmt(item.eval_amount||0, isUS)}${sfx}</td>
-      <td class="${cls(pl)}" style="font-weight:600">${pl >= 0 ? '+' : ''}${fmt(pl, isUS)}${sfx}</td>
+      <td class="${cls(pl)}" style="font-weight:600">${pl >= 0 ? '+' : '-'}${fmt(Math.abs(pl), isUS)}${sfx}</td>
       <td class="${cls(pr)}">
         <div class="rate-bar-wrap">
           <div class="rate-bar" style="width:${barW}px;background:${barColor}"></div>
@@ -1446,7 +1562,7 @@ function renderPortfolio(data) {
     <td class="hide-mobile">${fmt(totalBuy,isUS)}${sfx}</td>
     <td></td><td></td><td></td>
     <td>${fmt(totalEval,isUS)}${sfx}</td>
-    <td class="${cls(totalPL)}" style="font-weight:700">${totalPL>=0?'+':''}${fmt(totalPL,isUS)}${sfx}</td>
+    <td class="${cls(totalPL)}" style="font-weight:700">${totalPL>=0?'+':'-'}${fmt(Math.abs(totalPL),isUS)}${sfx}</td>
     <td class="${cls(totalPR)}" style="font-weight:700">${fmtRate(totalPR)}</td>
     <td></td>
   </tr>`);
@@ -1807,7 +1923,7 @@ function _updateUbmiChangeLabel(value) {
   _ubmiChangeLabelEl.style.top = `${Math.round(yCoord) - 20}px`;
   _ubmiChangeLabelEl.innerHTML = `
     <div style="background:${bg};color:#fff;padding:3px 6px;border-radius:3px;font-size:11px;font-weight:600;line-height:1.5;white-space:nowrap;text-align:right;">
-      <div>${value.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
+      <div>${window.innerWidth <= 768 ? Math.round(value/1000).toLocaleString('ko-KR') : value.toLocaleString(undefined,{maximumFractionDigits:2})}</div>
       <div style="font-size:9.5px;">(${sign}${rate.toFixed(2)}%)</div>
     </div>`;
 }
@@ -2157,7 +2273,7 @@ async function loadHistory() {
       const xCoord = _evalChart.timeScale().timeToCoordinate(firstTime);
       const left = xCoord != null && xCoord > 0 ? Math.round(xCoord) : 10;
       const lbl = document.createElement('div');
-      lbl.style.cssText = `position:absolute;left:${left}px;top:6px;z-index:5;font-size:11px;pointer-events:none;white-space:nowrap;text-shadow:0 0 4px #0d1117;display:flex;gap:12px;`;
+      lbl.style.cssText = `position:absolute;left:${left + 60}px;top:6px;z-index:5;font-size:11px;pointer-events:none;white-space:nowrap;text-shadow:0 0 4px #0d1117;display:flex;gap:12px;`;
       lbl.innerHTML = `<span style="color:${evalColor}">● 포트폴리오 평가금액</span>${hasKospi ? '<span style="color:#f04e5e">── KOSPI</span>' : ''}`;
       evalChartEl.appendChild(lbl);
     }, 150);
@@ -3024,8 +3140,8 @@ function switchTab(tab, btn) {
   document.getElementById('tab-' + tab).classList.add('active');
   btn.classList.add('active');
   localStorage.setItem('activeTab', tab);
-  // 코인 탭이 아닌 다른 탭으로 이동 시 WebSocket 해제
-  if (tab !== 'coin' && _coinWs) {
+  // 코인·종합 탭이 아닌 다른 탭으로 이동 시 WebSocket 해제
+  if (tab !== 'coin' && tab !== 'all' && _coinWs) {
     _coinWs.onclose = null;
     _coinWs.close();
     _coinWs = null;
@@ -3067,6 +3183,20 @@ function switchTab(tab, btn) {
         });
       }
     });
+  } else if (tab === 'all') {
+    // 코인 데이터 로드 (아직 안 됐다면)
+    if (!_coinLoaded) { _coinLoaded = true; loadCoinPortfolio(); loadCoinHistory(); }
+    else if (!_coinWs || _coinWs.readyState > 1) { _startCoinWebSocket(); }
+    // 종합 히스토리 로드
+    loadCombinedHistory();
+    renderAllTab();
+    requestAnimationFrame(() => {
+      if (_allEvalChart) {
+        const el = document.getElementById('all-eval-chart');
+        _allEvalChart.resize(el.offsetWidth, 260);
+        _allEvalChart.timeScale().fitContent();
+      }
+    });
   }
 }
 
@@ -3076,6 +3206,7 @@ function switchTab(tab, btn) {
 let _coinLoaded        = false;
 let _coinEvalChart     = null;
 let _allCoinHistory    = [];
+let _coinPortfolioData = null;
 let _coinHistoryMonths = 1;
 let _coinWs            = null;
 let _coinHoldingsData  = {};  // { BTC: { qty, avg, name } }
@@ -3086,7 +3217,9 @@ async function loadCoinPortfolio() {
   try {
     const res  = await fetch('/api/coin/portfolio');
     const data = await res.json();
+    _coinPortfolioData = data;
     renderCoinPortfolio(data);
+    if (document.getElementById('tab-all').classList.contains('active')) renderAllTab();
   } catch(e) {
     document.getElementById('coin-portfolio-body').innerHTML =
       '<tr><td colspan="11" class="empty">데이터 로드 실패</td></tr>';
@@ -3137,8 +3270,8 @@ function renderCoinPortfolio(data) {
       <td class="hide-mobile">${fmtKR(h.avg_price)}원</td>
       <td class="hide-mobile">${fmtKR(Math.round(h.avg_price * h.quantity))}원</td>
       <td style="font-weight:600">${hasPrice ? fmtKR(cur)+'원' : '<span class="spinner" style="width:12px;height:12px"></span>'}</td>
-      <td class="${clsChg}">${hasPrice ? arrow+fmtKR(Math.abs(chg))+'원' : '-'}</td>
-      <td class="${clsChg}">${hasPrice ? (rate>=0?'+':'')+rate.toFixed(2)+'%' : '-'}</td>
+      <td class="${clsChg}">${hasPrice ? (chg>0?'+':chg<0?'-':'')+fmtKR(Math.abs(chg))+'원' : '-'}</td>
+      <td class="${clsChg}">${hasPrice ? (rate>0?'+':rate<0?'-':'')+Math.abs(rate).toFixed(2)+'%' : '-'}</td>
       <td>${hasPrice ? fmtKR(h.eval_amount)+'원' : '-'}</td>
       <td class="${clsPr}">${hasPrice ? (pnl>=0?'+':'-')+fmtKR(Math.abs(pnl))+'원' : '-'}</td>
       <td class="${clsPr}">${hasPrice ? `<div class="rate-bar-wrap"><div class="rate-bar" style="width:${barW}px;background:${barColor}"></div>${(pr>=0?'+':'')+pr.toFixed(2)}%</div>` : '-'}</td>
@@ -3225,8 +3358,6 @@ function _startCoinWebSocket() {
 }
 
 function _applyCoinLivePrice(ticker) {
-  const row = document.querySelector(`#coin-portfolio-body tr[data-ticker="${ticker}"]`);
-  if (!row) return;
   const lp = _coinLivePrices[ticker];
   const hd = _coinHoldingsData[ticker];
   if (!lp || !hd) return;
@@ -3240,23 +3371,27 @@ function _applyCoinLivePrice(ticker) {
   const clsPr  = pr  > 0 ? 'up' : pr  < 0 ? 'down' : 'flat';
   const arrow  = chg > 0 ? '+' : chg < 0 ? '-' : '';
 
-  const c = row.querySelectorAll('td');
-  // 0=ticker 1=name 2=qty(hide) 3=avg(hide) 4=buyAmt(hide) 5=cur 6=chg 7=rate 8=eval 9=pnl 10=pr 11=btn
-  c[5].style.fontWeight = '600';
-  c[5].textContent = fmtKR(cur) + '원';
-  c[6].className   = clsChg;
-  c[6].textContent = arrow + fmtKR(Math.abs(chg)) + '원';
-  c[7].className   = clsChg;
-  c[7].textContent = (rate >= 0 ? '+' : '') + rate.toFixed(2) + '%';
-  c[8].textContent = fmtKR(evalAmt) + '원';
-  c[9].className   = clsPr;
-  c[9].textContent = (pnl >= 0 ? '+' : '-') + fmtKR(Math.abs(pnl)) + '원';
-  c[10].className   = clsPr;
-  const barColor2 = pnl >= 0 ? 'var(--up)' : 'var(--down)';
-  const barW2     = Math.min(Math.abs(pr) * 1.5, 40);
-  c[10].innerHTML = `<div class="rate-bar-wrap"><div class="rate-bar" style="width:${barW2}px;background:${barColor2}"></div>${pr >= 0 ? '+' : ''}${pr.toFixed(2)}%</div>`;
+  // 코인 탭 개별 행 DOM 업데이트
+  const row = document.querySelector(`#coin-portfolio-body tr[data-ticker="${ticker}"]`);
+  if (row) {
+    const c = row.querySelectorAll('td');
+    // 0=ticker 1=name 2=qty(hide) 3=avg(hide) 4=buyAmt(hide) 5=cur 6=chg 7=rate 8=eval 9=pnl 10=pr 11=btn
+    c[5].style.fontWeight = '600';
+    c[5].textContent = fmtKR(cur) + '원';
+    c[6].className   = clsChg;
+    c[6].textContent = (chg > 0 ? '+' : chg < 0 ? '-' : '') + fmtKR(Math.abs(chg)) + '원';
+    c[7].className   = clsChg;
+    c[7].textContent = (rate > 0 ? '+' : rate < 0 ? '-' : '') + Math.abs(rate).toFixed(2) + '%';
+    c[8].textContent = fmtKR(evalAmt) + '원';
+    c[9].className   = clsPr;
+    c[9].textContent = (pnl >= 0 ? '+' : '-') + fmtKR(Math.abs(pnl)) + '원';
+    c[10].className   = clsPr;
+    const barColor2 = pnl >= 0 ? 'var(--up)' : 'var(--down)';
+    const barW2     = Math.min(Math.abs(pr) * 1.5, 40);
+    c[10].innerHTML = `<div class="rate-bar-wrap"><div class="rate-bar" style="width:${barW2}px;background:${barColor2}"></div>${pr >= 0 ? '+' : ''}${pr.toFixed(2)}%</div>`;
+  }
 
-  // 요약 카드 갱신
+  // 전체 코인 합계 재계산
   let totalBuy = 0, totalEval = 0;
   for (const [t, h] of Object.entries(_coinHoldingsData)) {
     const buy = h.qty * h.avg;
@@ -3266,6 +3401,8 @@ function _applyCoinLivePrice(ticker) {
   }
   const totalProfit = totalEval - totalBuy;
   const totalRate   = totalBuy > 0 ? (totalProfit / totalBuy * 100) : 0;
+
+  // 코인 탭 요약 카드 갱신
   document.getElementById('coin-s-buy').textContent  = fmtKR(totalBuy)  + '원';
   document.getElementById('coin-s-eval').textContent = fmtKR(totalEval) + '원';
   const profitEl = document.getElementById('coin-s-profit');
@@ -3273,7 +3410,7 @@ function _applyCoinLivePrice(ticker) {
   profitEl.className   = 'value ' + (totalProfit >= 0 ? 'up' : 'down');
   document.getElementById('coin-s-profit-rate').textContent = (totalRate >= 0 ? '+' : '') + totalRate.toFixed(2) + '%';
 
-  // 합계 행 갱신
+  // 코인 탭 합계 행 갱신
   // tc 인덱스: [0]=합계(colspan=2) [1][2]=hide-mobile(보유수량,매입단가) [3]=hide-mobile(매입금액) [4][5][6]=empty [7]=평가금액 [8]=평가손익 [9]=수익률 [10]=관리
   const totalRow = document.querySelector('#coin-portfolio-body tr.total-row');
   if (totalRow) {
@@ -3288,11 +3425,28 @@ function _applyCoinLivePrice(ticker) {
     tc[9].textContent = (totalRate >= 0 ? '+' : '') + totalRate.toFixed(2) + '%';
   }
 
+  // _coinPortfolioData 동기화 (종합 탭용)
+  if (_coinPortfolioData) {
+    _coinPortfolioData.total_buy    = totalBuy;
+    _coinPortfolioData.total_eval   = totalEval;
+    _coinPortfolioData.total_profit = totalProfit;
+    _coinPortfolioData.total_rate   = totalRate;
+    const holding = (_coinPortfolioData.holdings || []).find(h => h.ticker === ticker);
+    if (holding) {
+      holding.current_price = cur;
+      holding.change        = chg;
+      holding.change_rate   = rate;
+      holding.eval_amount   = evalAmt;
+      holding.profit        = pnl;
+      holding.profit_rate   = pr;
+    }
+  }
+  if (document.getElementById('tab-all').classList.contains('active')) renderAllTab();
+
   // 오늘 실시간 손익 행 갱신 (09:00 이전)
   const rtRow = document.querySelector('#coin-history-body tr[data-realtime="true"]');
   if (rtRow) {
     const rc = rtRow.querySelectorAll('td');
-    // 기간 시작 기준가: 저장된 레코드(realtime 제외) 중 가장 최신
     const prevRec = _allCoinHistory.find(r => !r.realtime);
     const prevEval = prevRec ? prevRec.total_eval : 0;
     const dc = totalEval - prevEval;
@@ -3447,6 +3601,7 @@ async function _buildCoinEvalChart(recs) {
 
   const wrap = document.getElementById('coin-eval-chart-wrap');
   wrap.style.display = 'block';
+  document.getElementById('coin-eval-chart-unit').style.display = window.innerWidth <= 768 ? 'block' : 'none';
   if (_coinEvalChart) { _coinEvalChart.remove(); _coinEvalChart = null; _ubmiSeries = null; _ubmiChangeLabelEl = null; }
   const GRID='#2e3250', TEXT='#8892a4', BG='#131620';
   const SCALE_MARGINS = { top:0.08, bottom:0.08 };
@@ -3467,7 +3622,7 @@ async function _buildCoinEvalChart(recs) {
     priceScaleId: 'right',
     lineColor:'#f5c842', topColor:'rgba(245,200,66,0.2)', bottomColor:'rgba(245,200,66,0.02)',
     lineWidth:2, lastValueVisible:true, priceLineVisible:false,
-    priceFormat:{ type:'custom', formatter: v => Math.round(v).toLocaleString('ko-KR')+'원', minMove:1 },
+    priceFormat:{ type:'custom', formatter: v => window.innerWidth <= 768 ? Math.round(v/1000).toLocaleString() : Math.round(v).toLocaleString('ko-KR')+'원', minMove:1 },
   });
   s.setData(evalRaw);
 
@@ -3482,7 +3637,7 @@ async function _buildCoinEvalChart(recs) {
       lineWidth: 1,
       lastValueVisible: false,
       priceLineVisible: false,
-      priceFormat: { type:'custom', formatter: v => v.toLocaleString(undefined,{maximumFractionDigits:2}), minMove:0.01 },
+      priceFormat: { type:'custom', formatter: v => window.innerWidth <= 768 ? Math.round(v/1000).toLocaleString('ko-KR') : Math.round(v).toLocaleString('ko-KR')+'원', minMove:1 },
     });
     _ubmiSeries.setData(ubmiData.map(d => ({ time: d.date, value: d.close })));
 
@@ -3516,7 +3671,7 @@ async function _buildCoinEvalChart(recs) {
       const xCoord = _coinEvalChart.timeScale().timeToCoordinate(firstTime);
       const left = xCoord != null && xCoord > 0 ? Math.round(xCoord) : 10;
       const lbl = document.createElement('div');
-      lbl.style.cssText = `position:absolute;left:${left}px;top:6px;z-index:5;font-size:11px;pointer-events:none;white-space:nowrap;text-shadow:0 0 4px #0d1117;display:flex;gap:12px;`;
+      lbl.style.cssText = `position:absolute;left:${left + (window.innerWidth <= 768 ? 60 : 90)}px;top:6px;z-index:5;font-size:11px;pointer-events:none;white-space:nowrap;text-shadow:0 0 4px #0d1117;display:flex;gap:12px;`;
       lbl.innerHTML = `<span style="color:#f5c842">● 포트폴리오 평가금액</span><span style="color:#f04e5e">── ${ubmiSource}</span>`;
       coinChartEl.appendChild(lbl);
     }, 150);
@@ -3532,13 +3687,27 @@ async function _buildCoinEvalChart(recs) {
 // ── 코인 차트 모달 ──
 async function openCoinChartModal(ticker, name) {
   _chartIsUs = false;
-  _chartCode = ticker; _chartName = name || ticker; _chartPeriod = 'D';
-  _chartAvgPrice = 0;
-  document.querySelectorAll('.chart-period-btn').forEach((b,i) => b.classList.toggle('active', i===0));
-  document.getElementById('chart-modal-title').innerHTML = `${name} (${ticker})`;
-  document.getElementById('chart-modal-bg').style.display = 'flex';
-  // 차트 로드 시 코인 엔드포인트 사용
   _chartIsCoin = true;
+  _chartCode = ticker; _chartName = name || ticker; _chartPeriod = 'D';
+
+  // 보유 코인 매입단가 조회
+  const hd = _coinHoldingsData[ticker];
+  _chartAvgPrice = hd?.avg || 0;
+
+  document.querySelectorAll('.chart-period-btn').forEach((b,i) => b.classList.toggle('active', i===0));
+
+  // 타이틀: 종목명 (티커) + 보유 시 수익률
+  let titleHtml = `${name} (${ticker})`;
+  const lp = _coinLivePrices[ticker];
+  const curPrice = lp?.price || 0;
+  if (_chartAvgPrice > 0 && curPrice > 0) {
+    const profitRate = (curPrice - _chartAvgPrice) / _chartAvgPrice * 100;
+    const profitSign  = profitRate >= 0 ? '+' : '';
+    const profitColor = profitRate >= 0 ? '#f04e5e' : '#3b9eff';
+    titleHtml += `&nbsp;&nbsp;&nbsp;<span style="font-size:13px;font-weight:600;color:${profitColor}">수익률 : ${profitSign}${profitRate.toFixed(2)}%</span>`;
+  }
+  document.getElementById('chart-modal-title').innerHTML = titleHtml;
+  document.getElementById('chart-modal-bg').style.display = 'flex';
   await loadChart();
 }
 
@@ -3857,6 +4026,7 @@ async function loadUsHistory() {
     const hasNasdaq = nasdaqData.length >= 2;
 
     const wrap = document.getElementById('us-eval-chart-wrap');
+    document.getElementById('us-eval-chart-unit').style.display = window.innerWidth <= 768 ? 'block' : 'none';
     wrap.style.display = 'block';
     if (_usEvalChart) { _usEvalChart.remove(); _usEvalChart = null; }
 
@@ -3891,7 +4061,9 @@ async function loadUsHistory() {
       priceLineVisible: false,
       priceFormat: {
         type: 'custom',
-        formatter: v => Math.round(v).toLocaleString('ko-KR') + '원',
+        formatter: v => window.innerWidth <= 768
+          ? Math.round(v / 1000).toLocaleString()
+          : Math.round(v).toLocaleString('ko-KR') + '원',
         minMove: 1,
       },
     });
@@ -3952,7 +4124,7 @@ async function loadUsHistory() {
         const xCoord = _usEvalChart.timeScale().timeToCoordinate(firstTime);
         const left = xCoord != null && xCoord > 0 ? Math.round(xCoord) : 10;
         const lbl = document.createElement('div');
-        lbl.style.cssText = `position:absolute;left:${left}px;top:6px;z-index:5;font-size:11px;pointer-events:none;white-space:nowrap;text-shadow:0 0 4px #0d1117;display:flex;gap:12px;`;
+        lbl.style.cssText = `position:absolute;left:${left + 65}px;top:6px;z-index:5;font-size:11px;pointer-events:none;white-space:nowrap;text-shadow:0 0 4px #0d1117;display:flex;gap:12px;`;
         lbl.innerHTML = `<span style="color:#4f80ff">● 포트폴리오 평가금액</span><span style="color:#f04e5e">── NASDAQ</span>`;
         usChartEl.appendChild(lbl);
       }, 150);
@@ -4131,6 +4303,382 @@ async function saveAnalysisPrompt() {
 
 loadAnalysisPrompt();
 
+// ══════════════════════════════════════════════════
+//  종합 탭
+// ══════════════════════════════════════════════════
+let _allEvalChart        = null;
+let _allHistoryMonths    = 1;
+let _allCombinedHistory  = [];  // /api/combined/history 서버 데이터
+
+function renderAllTab() {
+  const kr   = _lastData?.kr  || {};
+  const us   = _usData        || {};
+  const coin = _coinPortfolioData || {};
+
+  const totalBuy    = (kr.total_buy      || 0) + (us.total_buy_krw    || 0) + (coin.total_buy    || 0);
+  const totalEval   = (kr.total_eval     || 0) + (us.total_eval_krw   || 0) + (coin.total_eval   || 0);
+  const totalProfit = (kr.total_profit   || 0) + (us.total_profit_krw || 0) + (coin.total_profit || 0);
+  const totalRate   = totalBuy ? (totalProfit / totalBuy * 100) : 0;
+
+  document.getElementById('all-s-buy').textContent  = fmtKR(totalBuy) + '원';
+  document.getElementById('all-s-eval').textContent = fmtKR(totalEval) + '원';
+
+  const profEl = document.getElementById('all-s-profit');
+  profEl.textContent = (totalProfit >= 0 ? '+' : '') + fmtKR(totalProfit) + '원';
+  profEl.className   = 'value ' + cls(totalProfit);
+
+  const rateEl = document.getElementById('all-s-profit-rate');
+  rateEl.textContent = fmtRate(totalRate);
+  rateEl.className   = 'sub ' + cls(totalRate);
+
+  const krCount   = (kr.holdings   || []).length;
+  const usCount   = (us.holdings   || []).length;
+  const coinCount = (coin.holdings || []).length;
+  document.getElementById('all-s-count').textContent = (krCount + usCount + coinCount) + '종목';
+  document.getElementById('all-s-count-detail').textContent = `국내 ${krCount} / 미국 ${usCount} / 코인 ${coinCount}`;
+
+  renderAllHoldingsTable();
+  _updateAllTodayRow();   // 오늘 행만 갱신 (차트 재생성 없음)
+}
+
+function renderAllHoldingsTable() {
+  const krH   = _lastData?.kr?.holdings     || [];
+  const usH   = _usData?.holdings           || [];
+  const coinH = _coinPortfolioData?.holdings || [];
+
+  // 환율 표시
+  const exRate = _usData?.exchange_rate || 0;
+  const rateEl = document.getElementById('all-usd-rate');
+  if (rateEl) {
+    if (exRate > 0) {
+      const exDate = localDate(new Date());
+      rateEl.innerHTML = `USD/KRW  <b style="color:var(--gold);font-size:13px">${exRate.toLocaleString('ko-KR', {maximumFractionDigits:0})}원</b>  <span style="color:var(--text2)">(${exDate})</span>`;
+    } else {
+      rateEl.textContent = '';
+    }
+  }
+
+  const tbody = document.getElementById('all-holdings-body');
+  let rows = [];
+  let totalBuy = 0, totalEval = 0, totalProfit = 0;
+
+  // 국내
+  krH.forEach(h => {
+    const buy = h.buy_amount   || 0;
+    const ev  = h.eval_amount  || 0;
+    const pl  = h.profit_loss  || 0;
+    const pr  = h.profit_rate  || 0;
+    totalBuy += buy; totalEval += ev; totalProfit += pl;
+    const barColor = pl >= 0 ? 'var(--up)' : 'var(--down)';
+    const barW = Math.min(Math.abs(pr) * 1.5, 40);
+    rows.push(`<tr>
+      <td><span class="code-badge" style="font-size:10px">국내</span></td>
+      <td>${h.name}</td>
+      <td class="hide-mobile">${fmtKR(buy)}원</td>
+      <td style="font-weight:700">${fmtKR(h.current_price)}원</td>
+      <td class="${cls(h.change || 0)}">${(h.change||0) >= 0 ? '+' : '-'}${fmtKR(Math.abs(h.change||0))}원</td>
+      <td class="${cls(h.change_rate || 0)}">${fmtRate(h.change_rate || 0)}</td>
+      <td>${fmtKR(ev)}원</td>
+      <td class="${cls(pl)}" style="font-weight:600">${pl >= 0 ? '+' : '-'}${fmtKR(Math.abs(pl))}원</td>
+      <td class="${cls(pr)}">
+        <div class="rate-bar-wrap">
+          <div class="rate-bar" style="width:${barW}px;background:${barColor}"></div>
+          ${fmtRate(pr)}
+        </div>
+      </td>
+    </tr>`);
+  });
+
+  // 미국
+  usH.forEach(h => {
+    const buy = h.buy_krw     || 0;
+    const ev  = h.eval_krw    || 0;
+    const pl  = h.profit_krw  || 0;
+    const pr  = h.profit_rate || 0;
+    totalBuy += buy; totalEval += ev; totalProfit += pl;
+    const barColor = pl >= 0 ? 'var(--up)' : 'var(--down)';
+    const barW = Math.min(Math.abs(pr) * 1.5, 40);
+    rows.push(`<tr>
+      <td><span class="us-badge" style="font-size:10px">미국</span></td>
+      <td>${h.name || h.ticker}</td>
+      <td class="hide-mobile">${buy.toLocaleString('ko-KR')}원</td>
+      <td style="font-weight:700">$${(h.current_price || 0).toFixed(2)}</td>
+      <td class="${cls(h.change || 0)}">${(h.change||0) >= 0 ? '+' : '-'}$${Math.abs(h.change||0).toFixed(2)}</td>
+      <td class="${cls(h.change_rate || 0)}">${fmtRate(h.change_rate || 0)}</td>
+      <td>${ev.toLocaleString('ko-KR')}원</td>
+      <td class="${cls(pl)}" style="font-weight:600">${pl >= 0 ? '+' : '-'}${Math.abs(pl).toLocaleString('ko-KR')}원</td>
+      <td class="${cls(pr)}">
+        <div class="rate-bar-wrap">
+          <div class="rate-bar" style="width:${barW}px;background:${barColor}"></div>
+          ${fmtRate(pr)}
+        </div>
+      </td>
+    </tr>`);
+  });
+
+  // 코인
+  coinH.forEach(h => {
+    const buy = Math.round((h.avg_price || 0) * (h.quantity || 0));
+    const ev  = h.eval_amount || 0;
+    const pl  = h.profit      || 0;
+    const pr  = h.profit_rate || 0;
+    totalBuy += buy; totalEval += ev; totalProfit += pl;
+    const barColor = pl >= 0 ? 'var(--up)' : 'var(--down)';
+    const barW = Math.min(Math.abs(pr) * 1.5, 40);
+    rows.push(`<tr>
+      <td><span style="display:inline-block;background:#f7931a22;color:#f7931a;border:1px solid #f7931a55;border-radius:3px;font-size:10px;padding:1px 4px">코인</span></td>
+      <td>${h.name || h.ticker}</td>
+      <td class="hide-mobile">${fmtKR(buy)}원</td>
+      <td style="font-weight:700">${fmtKR(h.current_price || 0)}원</td>
+      <td class="${cls(h.change || 0)}">${(h.change||0) >= 0 ? '+' : '-'}${fmtKR(Math.abs(h.change||0))}원</td>
+      <td class="${cls(h.change_rate || 0)}">${fmtRate(h.change_rate || 0)}</td>
+      <td>${fmtKR(ev)}원</td>
+      <td class="${cls(pl)}" style="font-weight:600">${pl >= 0 ? '+' : '-'}${fmtKR(Math.abs(pl))}원</td>
+      <td class="${cls(pr)}">
+        <div class="rate-bar-wrap">
+          <div class="rate-bar" style="width:${barW}px;background:${barColor}"></div>
+          ${fmtRate(pr)}
+        </div>
+      </td>
+    </tr>`);
+  });
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">보유 종목 없음</td></tr>';
+    return;
+  }
+
+  const totalPR = totalBuy ? (totalProfit / totalBuy * 100) : 0;
+  rows.push(`<tr class="total-row">
+    <td colspan="2" style="text-align:left;padding-left:14px">합  계</td>
+    <td class="hide-mobile" style="text-align:right">${fmtKR(totalBuy)}원</td>
+    <td></td><td></td><td></td>
+    <td class="gold">${fmtKR(totalEval)}원</td>
+    <td class="${cls(totalProfit)}" style="font-weight:600">${totalProfit >= 0 ? '+' : '-'}${fmtKR(Math.abs(totalProfit))}원</td>
+    <td class="${cls(totalPR)}">${fmtRate(totalPR)}</td>
+  </tr>`);
+
+  tbody.innerHTML = rows.join('');
+}
+
+async function loadCombinedHistory() {
+  try {
+    const recs = await fetch('/api/combined/history').then(r => r.json());
+    _allCombinedHistory = recs;
+    if (!document.getElementById('all-history-from').value) {
+      const to = new Date(), from = new Date();
+      from.setMonth(from.getMonth() - 1);
+      document.getElementById('all-history-from').value = localDate(from);
+      document.getElementById('all-history-to').value   = localDate(to);
+    }
+    renderAllHistoryTable();
+  } catch(e) {}
+}
+
+function _updateAllTodayRow() {
+  // 오늘 실시간 행만 갱신 — 차트는 건드리지 않음
+  const todayStr = localDate(new Date());
+  const kr   = _lastData?.kr  || {};
+  const us   = _usData        || {};
+  const coin = _coinPortfolioData || {};
+
+  const coin_eval = coin.total_eval || 0;
+  if (!coin_eval) return;
+
+  // KR/US 평가금액:
+  //   - 장 중(평일 09:00~15:36): SSE 실시간 사용
+  //   - 휴장일/주말/장 외: combined_history 배치값 사용 (NXT와 KRX 가격 차이 방지)
+  const now = new Date();
+  const dow = now.getDay(); // 0=일, 6=토
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const isKrMarketHours = (dow >= 1 && dow <= 5) && (nowMin >= 9 * 60) && (nowMin < 15 * 60 + 36);
+
+  let kr_eval, us_eval;
+  if (isKrMarketHours && (kr.total_eval || 0) > 0) {
+    // 장 중: SSE 실시간
+    kr_eval = kr.total_eval || 0;
+    us_eval = us.total_eval_krw || 0;
+  } else {
+    // 휴장/주말: combined_history의 최신 배치값 사용
+    // (KR=마지막 거래일 배치, US=마지막 거래일 배치)
+    const latestRec = _allCombinedHistory[0];
+    kr_eval = latestRec?.kr_eval || (kr.total_eval || 0);
+    us_eval = latestRec?.us_eval || (us.total_eval_krw || 0);
+  }
+
+  const tb = (kr.total_buy||0) + (us.total_buy_krw||0) + (coin.total_buy||0);
+  const te = kr_eval + us_eval + coin_eval;
+  const tp = te - tb;
+  const prevRec  = _allCombinedHistory.find(r => r.date < todayStr);
+  const prevEval = prevRec ? prevRec.total_eval : 0;
+  const dc = prevEval ? te - prevEval : 0;
+  const pr = tb ? (tp / tb * 100) : 0;
+
+  const existing = document.getElementById('all-history-today-row');
+  const html = `<td style="text-align:left;font-size:12px"><span style="color:#f0c040;font-weight:600">${todayStr} ▶</span></td>
+    <td>${fmtKR(tb)}원</td>
+    <td class="gold">${fmtKR(te)}원</td>
+    <td class="${cls(tp)}" style="font-weight:600">${tp >= 0 ? '+' : ''}${fmtKR(tp)}원</td>
+    <td class="${cls(pr)}">${fmtRate(pr)}</td>
+    <td class="${cls(dc)}" style="font-weight:600">${dc >= 0 ? '+' : ''}${fmtKR(dc)}원</td>`;
+
+  if (existing) {
+    existing.innerHTML = html;  // 기존 행 내용만 교체
+  } else {
+    // 행이 없으면 테이블 맨 위에 삽입
+    const tbody = document.getElementById('all-history-body');
+    const tr = document.createElement('tr');
+    tr.id = 'all-history-today-row';
+    tr.innerHTML = html;
+    tbody.insertBefore(tr, tbody.firstChild);
+  }
+}
+
+function renderAllHistoryTable() {
+  const tbody    = document.getElementById('all-history-body');
+  const todayStr = localDate(new Date());
+  let fromStr = '', toStr = todayStr;
+
+  if (_allHistoryMonths > 0) {
+    const d = new Date(); d.setMonth(d.getMonth() - _allHistoryMonths);
+    fromStr = localDate(d);
+  } else {
+    fromStr = document.getElementById('all-history-from').value || '';
+    toStr   = document.getElementById('all-history-to').value   || todayStr;
+  }
+
+  // 오늘 레코드는 항상 실시간으로 표시 → combined 저장본에서 오늘 제외
+  const filtered = _allCombinedHistory.filter(r => {
+    if (r.date === todayStr) return false;          // 오늘은 실시간 행으로 대체
+    if (fromStr && r.date < fromStr) return false;
+    if (toStr   && r.date > toStr)   return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">기록 없음</td></tr>';
+    // 오늘 행은 _updateAllTodayRow()가 담당
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(r => {
+    const tb = r.total_buy, te = r.total_eval, tp = r.total_profit;
+    const dc = r.daily_change || 0, pr = r.total_rate || 0;
+    const subLbl = (r.kr_date && r.kr_date !== r.date)
+      ? `<span style="font-size:10px;color:var(--text2)"> (KR:${r.kr_date.slice(5)})</span>` : '';
+    const dateLbl = `<span style="color:var(--text2)">${r.date}</span>${subLbl}`;
+    return `<tr>
+      <td style="text-align:left;font-size:12px">${dateLbl}</td>
+      <td>${fmtKR(tb)}원</td>
+      <td class="gold">${fmtKR(te)}원</td>
+      <td class="${cls(tp)}" style="font-weight:600">${tp >= 0 ? '+' : ''}${fmtKR(tp)}원</td>
+      <td class="${cls(pr)}">${fmtRate(pr)}</td>
+      <td class="${cls(dc)}" style="font-weight:600">${dc >= 0 ? '+' : ''}${fmtKR(dc)}원</td>
+    </tr>`;
+  }).join('');
+
+  // 오늘 행은 별도 함수로 (chart 재생성 없이 갱신 가능)
+  if (todayStr >= (fromStr || todayStr) && todayStr <= toStr) {
+    _updateAllTodayRow();
+  }
+
+  buildAllEvalChart(filtered);
+}
+
+async function saveCombinedSnapshot() {
+  try {
+    const res  = await fetch('/api/combined/snapshot', { method: 'POST' });
+    const data = await res.json();
+    if (data.ok) {
+      showToast(`종합 스냅샷 저장 완료 (${data.date}, 합계 ${Math.round(data.total_eval).toLocaleString('ko-KR')}원)`);
+      await loadCombinedHistory();
+    } else {
+      showToast(data.error || '저장 실패', true);
+    }
+  } catch(e) { showToast('오류: ' + e.message, true); }
+}
+
+function setAllHistoryPeriod(months, btn) {
+  _allHistoryMonths = months;
+  document.querySelectorAll('#tab-all .history-period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const to = new Date(), from = new Date();
+  from.setMonth(from.getMonth() - months);
+  document.getElementById('all-history-from').value = localDate(from);
+  document.getElementById('all-history-to').value   = localDate(to);
+  renderAllHistoryTable();
+}
+
+function applyAllHistoryRange() {
+  _allHistoryMonths = 0;
+  document.querySelectorAll('#tab-all .history-period-btn').forEach(b => b.classList.remove('active'));
+  renderAllHistoryTable();
+}
+
+function buildAllEvalChart(combined) {
+  if (combined.length < 2) return;
+  const wrap = document.getElementById('all-eval-chart-wrap');
+  wrap.style.display = 'block';
+  document.getElementById('all-eval-chart-unit').style.display = window.innerWidth <= 768 ? 'block' : 'none';
+  if (_allEvalChart) { _allEvalChart.remove(); _allEvalChart = null; }
+
+  const GRID = '#2e3250', TEXT = '#8892a4', BG = '#131620';
+  _allEvalChart = LightweightCharts.createChart(document.getElementById('all-eval-chart'), {
+    height: 260,
+    layout: { background: { color: BG }, textColor: TEXT },
+    grid: { vertLines: { color: GRID }, horzLines: { color: GRID } },
+    crosshair: { mode: 1, vertLine: { labelVisible: false } },
+    timeScale: {
+      borderColor: GRID, timeVisible: true, rightOffset: 0,
+      tickMarkFormatter: (time) => {
+        const parts = String(time).split('-');
+        if (parts.length === 3) return `${parseInt(parts[1])}/${parseInt(parts[2])}`;
+        return String(time);
+      },
+    },
+    rightPriceScale: { borderColor: GRID, scaleMargins: { top: 0.1, bottom: 0.1 } },
+    handleScroll: false, handleScale: false,
+  });
+
+  const priceFormat = { type: 'custom', formatter: v => window.innerWidth <= 768 ? Math.round(v/1000).toLocaleString() : Math.round(v).toLocaleString('ko-KR') + '원', minMove: 1 };
+  const sorted = [...combined].sort((a, b) => a.date.localeCompare(b.date));
+
+  // 합계 (area)
+  const totalSeries = _allEvalChart.addAreaSeries({
+    priceScaleId: 'right', lineColor: '#4f80ff',
+    topColor: 'rgba(79,128,255,0.18)', bottomColor: 'rgba(79,128,255,0.02)',
+    lineWidth: 2, lastValueVisible: true, priceLineVisible: false, priceFormat,
+  });
+  totalSeries.setData(sorted.map(r => ({ time: r.date, value: r.kr_eval + r.us_eval + r.coin_eval })));
+
+  // 국내
+  const krSeries = _allEvalChart.addLineSeries({
+    priceScaleId: 'right', color: '#f04e5e', lineWidth: 1,
+    lastValueVisible: false, priceLineVisible: false, priceFormat,
+  });
+  krSeries.setData(sorted.filter(r => r.kr_eval > 0).map(r => ({ time: r.date, value: r.kr_eval })));
+
+  // 미국
+  const usSeries = _allEvalChart.addLineSeries({
+    priceScaleId: 'right', color: '#f5c842', lineWidth: 1,
+    lastValueVisible: false, priceLineVisible: false, priceFormat,
+  });
+  usSeries.setData(sorted.filter(r => r.us_eval > 0).map(r => ({ time: r.date, value: r.us_eval })));
+
+  // 코인
+  const coinSeries = _allEvalChart.addLineSeries({
+    priceScaleId: 'right', color: '#f7931a', lineWidth: 1,
+    lastValueVisible: false, priceLineVisible: false, priceFormat,
+  });
+  coinSeries.setData(sorted.filter(r => r.coin_eval > 0).map(r => ({ time: r.date, value: r.coin_eval })));
+
+  _allEvalChart.timeScale().fitContent();
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const r = _allEvalChart.timeScale().getVisibleLogicalRange();
+    if (r) _allEvalChart.timeScale().setVisibleLogicalRange({ from: r.from + 0.5, to: r.to - 0.5 });
+  }));
+}
+
 // 페이지 로드 시 마지막 탭 복원 (모든 함수/변수 정의 완료 후 실행)
 (function() {
   const saved = localStorage.getItem('activeTab');
@@ -4140,6 +4688,9 @@ loadAnalysisPrompt();
   } else if (saved === 'coin') {
     const btn = document.querySelector('.tab-btn:nth-child(3)');
     if (btn) switchTab('coin', btn);
+  } else if (saved === 'all') {
+    const btn = document.querySelector('.tab-btn:nth-child(4)');
+    if (btn) switchTab('all', btn);
   }
 })();
 </script>
