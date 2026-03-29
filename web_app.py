@@ -1918,19 +1918,20 @@ def _check_us_open_alert(portfolio_data: dict):
 def _check_us_close_alert(portfolio_data: dict):
     """미국 정규장 마감 보유종목 알림 (하루 1번)
     EDT(써머타임): 05:00 KST / EST: 06:00 KST
-    금요일 거래는 토요일 새벽에 마감 → 토요일 허용"""
+    마감 시각 05:00 KST = 전날 16:00 EDT → 미국 실제 거래일은 KST 기준 전일"""
     now = datetime.now()
-    # 일요일만 완전 제외 (토요일 새벽 = 금요일 정규장 마감)
-    if now.weekday() == 6:
-        return
-    # 토요일이면 오전만 허용 (금요일 마감 처리)
-    if now.weekday() == 5 and now.time() >= dtime(8, 0):
-        return
-    if now.strftime("%Y-%m-%d") in US_HOLIDAYS:
-        return
     close_h = dtime(5, 0) if _is_us_dst(now) else dtime(6, 0)
     close_end = dtime(close_h.hour, close_h.minute + 10)
     if not (close_h <= now.time() < close_end):
+        return
+    # 미국 실제 거래일 = KST 기준 전일 (05:00 KST = 전날 16:00 EDT)
+    us_trading_dt  = now - timedelta(days=1)
+    us_trading_dow = us_trading_dt.weekday()
+    us_date_str    = us_trading_dt.strftime("%Y-%m-%d")
+    # 주말(토=5, 일=6) 또는 미국 휴장일이면 skip
+    if us_trading_dow >= 5:
+        return
+    if us_date_str in US_HOLIDAYS:
         return
     today = now.strftime("%Y-%m-%d")
     if _load_us_close_alert_date() == today:
@@ -1947,7 +1948,7 @@ def _check_us_close_alert(portfolio_data: dict):
     total_rate       = us.get("total_profit_rate", 0.0)
     SEP = "─" * 20
     sorted_h = sorted(holdings, key=lambda x: x.get("change_rate", 0), reverse=True)
-    lines = [f"<b>\U0001f1fa\U0001f1f8 미국장 마감 포트폴리오 ({today})</b>", SEP]
+    lines = [f"<b>\U0001f1fa\U0001f1f8 미국장 마감 포트폴리오 ({us_date_str})</b>", SEP]
     for h in sorted_h:
         name  = h.get("name", h.get("ticker", ""))
         tick  = h.get("ticker", "")

@@ -156,9 +156,7 @@
   #portfolio-table th:nth-child(9), #portfolio-table td:nth-child(9) { min-width: 96px; }  /* 평가금액 */
   #portfolio-table th:nth-child(10),#portfolio-table td:nth-child(10){ min-width: 96px; }  /* 평가손익 */
 
-  /* 미국 보유종목 테이블 — 컬럼 많아 compact 처리 */
-  #us-portfolio-table thead th,
-  #us-portfolio-table tbody td { padding: 8px 8px; }
+  /* 미국 보유종목 테이블 */
   #us-portfolio-table td:nth-child(1) { font-size: 12px; }          /* 티커 */
   #us-portfolio-table td:nth-child(2) { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }  /* 종목명 */
   #us-portfolio-table th:nth-child(7),  #us-portfolio-table td:nth-child(7)  { min-width: 72px; }   /* 현재가 */
@@ -171,12 +169,22 @@
   #us-portfolio-table .edit-btn, #us-portfolio-table .del-btn { padding: 3px 8px; }
 
   /* 종합 보유종목 숫자 컬럼: 자릿수 변화 시 레이아웃 흔들림 방지 */
-  #all-holdings-table td:nth-child(4)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 현재가 */
-  #all-holdings-table td:nth-child(5)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 전일대비 */
-  #all-holdings-table td:nth-child(6)  { min-width:  70px; font-variant-numeric: tabular-nums; }  /* 등락률 */
-  #all-holdings-table td:nth-child(7)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 평가금액 */
-  #all-holdings-table td:nth-child(8)  { min-width: 120px; font-variant-numeric: tabular-nums; }  /* 평가손익 */
-  #all-holdings-table td:nth-child(9)  { min-width: 100px; font-variant-numeric: tabular-nums; }  /* 수익률 */
+  #all-holdings-table td:nth-child(6)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 현재가 */
+  #all-holdings-table td:nth-child(7)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 전일대비 */
+  #all-holdings-table td:nth-child(8)  { min-width:  70px; font-variant-numeric: tabular-nums; }  /* 등락률 */
+  #all-holdings-table td:nth-child(9)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 평가금액 */
+  #all-holdings-table td:nth-child(10) { min-width: 120px; font-variant-numeric: tabular-nums; }  /* 평가손익 */
+  #all-holdings-table td:nth-child(11) { min-width: 100px; font-variant-numeric: tabular-nums; }  /* 수익률 */
+  @media (max-width: 768px) {
+    #all-holdings-table th, #all-holdings-table td { padding: 4px 3px; white-space: nowrap; }
+    #all-holdings-table td:nth-child(2) { max-width: 72px; overflow: hidden; text-overflow: ellipsis; }
+    #all-holdings-table td:nth-child(6)  { min-width: 58px; }
+    #all-holdings-table td:nth-child(7)  { min-width: 58px; }
+    #all-holdings-table td:nth-child(8)  { min-width: 44px; }
+    #all-holdings-table td:nth-child(9)  { min-width: 58px; }
+    #all-holdings-table td:nth-child(10) { min-width: 62px; }
+    #all-holdings-table td:nth-child(11) { min-width: 52px; }
+  }
 
   /* 코인 숫자 컬럼: 자릿수 변화 시 레이아웃 흔들림 방지 */
   #coin-portfolio-table td:nth-child(7)  { min-width: 110px; font-variant-numeric: tabular-nums; }  /* 전일대비 */
@@ -578,6 +586,32 @@
     .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
     table { font-size:11px; }
     thead th, tbody td { padding:6px 8px; white-space: nowrap; }
+    #portfolio-table th, #portfolio-table td,
+    #us-portfolio-table th, #us-portfolio-table td,
+    #coin-portfolio-table th, #coin-portfolio-table td { padding: 4px 3px; }
+    #coin-portfolio-table td:nth-child(2)  { min-width: 56px; }   /* 코인명 */
+    #coin-portfolio-table td:nth-child(6)  { min-width: 76px; }   /* 현재가 */
+    #coin-portfolio-table td:nth-child(7)  { min-width: 58px; }   /* 전일대비 */
+    #coin-portfolio-table td:nth-child(8)  { min-width: 48px; }   /* 등락률 */
+    #coin-portfolio-table td:nth-child(9)  { min-width: 72px; }   /* 평가금액 */
+    #coin-portfolio-table td:nth-child(10) { min-width: 72px; }   /* 평가손익 */
+    #coin-portfolio-table td:nth-child(11) { min-width: 52px; }   /* 수익률 */
+    /* 국내 보유종목 */
+    #portfolio-table td:nth-child(2)  { max-width: 68px; overflow:hidden; text-overflow:ellipsis; }   /* 종목명 */
+    #portfolio-table th:nth-child(6), #portfolio-table td:nth-child(6)  { min-width: 62px; }   /* 현재가 */
+    #portfolio-table th:nth-child(7), #portfolio-table td:nth-child(7)  { min-width: 54px; }   /* 전일대비 */
+    #portfolio-table th:nth-child(8), #portfolio-table td:nth-child(8)  { min-width: 36px; }   /* 등락률 */
+    #portfolio-table th:nth-child(9), #portfolio-table td:nth-child(9)  { min-width: 62px; }   /* 평가금액 */
+    #portfolio-table th:nth-child(10),#portfolio-table td:nth-child(10) { min-width: 62px; }   /* 평가손익 */
+    /* 미국 보유종목 — PC rule([1,0,2]) 덮어쓰기: 동일 specificity이나 나중에 선언되어 모바일에서 우선 적용 */
+    #us-portfolio-table thead th, #us-portfolio-table tbody td { padding: 4px 3px; }
+    #us-portfolio-table td:nth-child(2)  { max-width: 90px; overflow:hidden; text-overflow:ellipsis; }
+    #us-portfolio-table th:nth-child(7),  #us-portfolio-table td:nth-child(7)  { min-width: 62px; }   /* 현재가 */
+    #us-portfolio-table th:nth-child(8),  #us-portfolio-table td:nth-child(8)  { min-width: 54px; }   /* 전일대비 */
+    #us-portfolio-table th:nth-child(9),  #us-portfolio-table td:nth-child(9)  { min-width: 36px; }   /* 등락률 */
+    #us-portfolio-table th:nth-child(10), #us-portfolio-table td:nth-child(10) { min-width: 62px; }   /* 평가금액 */
+    #us-portfolio-table th:nth-child(11), #us-portfolio-table td:nth-child(11) { min-width: 62px; }   /* 평가손익 */
+    #us-portfolio-table th:nth-child(12), #us-portfolio-table td:nth-child(12) { min-width: 52px; }   /* 수익률 */
 
     /* 헤더 */
     header { padding: 10px 12px; }
@@ -1156,6 +1190,8 @@
           <tr>
             <th>구분</th>
             <th>종목명</th>
+            <th class="hide-mobile">매입수량</th>
+            <th class="hide-mobile">매입단가</th>
             <th class="hide-mobile">매입금액</th>
             <th>현재가</th>
             <th>전일대비</th>
@@ -4373,7 +4409,9 @@ function renderAllHoldingsTable() {
     const barW = Math.min(Math.abs(pr) * 1.5, 40);
     rows.push(`<tr>
       <td><span class="code-badge" style="font-size:10px">국내</span></td>
-      <td>${h.name}</td>
+      <td style="cursor:pointer;color:var(--text)" onclick="openChartModal('${h.code}','${(h.name||'').replace(/'/g,"\\'")}')">${h.name}</td>
+      <td class="hide-mobile">${fmtKR(h.quantity||0)}</td>
+      <td class="hide-mobile">${fmtKR(h.avg_price||0)}원</td>
       <td class="hide-mobile">${fmtKR(buy)}원</td>
       <td style="font-weight:700">${fmtKR(h.current_price)}원</td>
       <td class="${cls(h.change || 0)}">${(h.change||0) >= 0 ? '+' : '-'}${fmtKR(Math.abs(h.change||0))}원</td>
@@ -4400,7 +4438,9 @@ function renderAllHoldingsTable() {
     const barW = Math.min(Math.abs(pr) * 1.5, 40);
     rows.push(`<tr>
       <td><span class="us-badge" style="font-size:10px">미국</span></td>
-      <td>${h.name || h.ticker}</td>
+      <td style="cursor:pointer;color:var(--text)" onclick="openUsChartModal('${h.ticker}','${(h.name||h.ticker).replace(/'/g,"\\'")}')">${h.name || h.ticker}</td>
+      <td class="hide-mobile">${(h.quantity||0).toLocaleString()}</td>
+      <td class="hide-mobile">$${(h.avg_price||0).toFixed(4)}</td>
       <td class="hide-mobile">${buy.toLocaleString('ko-KR')}원</td>
       <td style="font-weight:700">$${(h.current_price || 0).toFixed(2)}</td>
       <td class="${cls(h.change || 0)}">${(h.change||0) >= 0 ? '+' : '-'}$${Math.abs(h.change||0).toFixed(2)}</td>
@@ -4427,7 +4467,9 @@ function renderAllHoldingsTable() {
     const barW = Math.min(Math.abs(pr) * 1.5, 40);
     rows.push(`<tr>
       <td><span style="display:inline-block;background:#f7931a22;color:#f7931a;border:1px solid #f7931a55;border-radius:3px;font-size:10px;padding:1px 4px">코인</span></td>
-      <td>${h.name || h.ticker}</td>
+      <td style="cursor:pointer;color:var(--accent)" onclick="openCoinChartModal('${h.ticker}','${(h.name||h.ticker).replace(/'/g,"\\'")}')">${h.name || h.ticker}</td>
+      <td class="hide-mobile">${h.quantity||0}</td>
+      <td class="hide-mobile">${fmtKR(h.avg_price||0)}원</td>
       <td class="hide-mobile">${fmtKR(buy)}원</td>
       <td style="font-weight:700">${fmtKR(h.current_price || 0)}원</td>
       <td class="${cls(h.change || 0)}">${(h.change||0) >= 0 ? '+' : '-'}${fmtKR(Math.abs(h.change||0))}원</td>
@@ -4451,6 +4493,8 @@ function renderAllHoldingsTable() {
   const totalPR = totalBuy ? (totalProfit / totalBuy * 100) : 0;
   rows.push(`<tr class="total-row">
     <td colspan="2" style="text-align:left;padding-left:14px">합  계</td>
+    <td class="hide-mobile"></td>
+    <td class="hide-mobile"></td>
     <td class="hide-mobile" style="text-align:right">${fmtKR(totalBuy)}원</td>
     <td></td><td></td><td></td>
     <td class="gold">${fmtKR(totalEval)}원</td>
