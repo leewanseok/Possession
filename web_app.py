@@ -897,26 +897,58 @@ def build_portfolio(force_market=None):
                     price_map[code] = None
         else:
             krx_regular = dtime(9, 0) <= now_t < dtime(15, 30)  # KRX 정규장: J 결과 우선
-            all_results = {}   # code → {"J": result, "NX": result}
-            with ThreadPoolExecutor(max_workers=max(len(pairs), 1)) as ex:
-                for code, mrkt in pairs:
-                    pending[ex.submit(_kis_api.fetch_price_raw, code, mrkt)] = (code, mrkt)
-                for fut in as_completed(pending):
-                    code, mrkt = pending[fut]
-                    try:
-                        result = fut.result()
-                        if result:
-                            all_results.setdefault(code, {})[mrkt] = result
-                            if mrkt == "NX":
-                                nxt_success.add(code)
-                    except Exception:
-                        pass
-            # KRX 정규장: change/change_rate는 KRX("J") 기준 우선 (NXT 전일 참조가 다를 수 있음)
-            for code, res in all_results.items():
-                if krx_regular and "J" in res:
-                    first_done[code] = res["J"]   # J 우선
-                else:
-                    first_done[code] = res.get("J") or res.get("NX")
+
+            # ── KIS WebSocket 캐시 우선 사용 (장 중 + WS 활성 시) ──
+            if _kr_ws_active and krx_regular:
+                ws_miss = []   # WS 캐시 없는 종목
+                with _kr_ws_lock:
+                    ws_snap = dict(_kr_ws_prices)
+                for it in items:
+                    code = str(it.get("code", "")).zfill(6)
+                    if code in ws_snap:
+                        p = ws_snap[code]
+                        first_done[code] = {
+                            "code":         code,
+                            "name":         it.get("name", code),
+                            "current_price": p["current_price"],
+                            "change":        p["change"],
+                            "change_rate":   p["change_rate"],
+                        }
+                    else:
+                        ws_miss.append((code, "J"))  # 미수신 종목만 API로 보완
+                if ws_miss:
+                    with ThreadPoolExecutor(max_workers=len(ws_miss)) as ex:
+                        miss_futs = {ex.submit(_kis_api.fetch_price_raw, c, m): c for c, m in ws_miss}
+                        for fut in as_completed(miss_futs):
+                            c = miss_futs[fut]
+                            try:
+                                r = fut.result()
+                                if r:
+                                    first_done[c] = r
+                            except Exception:
+                                pass
+            else:
+                # REST API 폴링 (WS 비활성 또는 비정규장 구간)
+                all_results = {}   # code → {"J": result, "NX": result}
+                with ThreadPoolExecutor(max_workers=max(len(pairs), 1)) as ex:
+                    for code, mrkt in pairs:
+                        pending[ex.submit(_kis_api.fetch_price_raw, code, mrkt)] = (code, mrkt)
+                    for fut in as_completed(pending):
+                        code, mrkt = pending[fut]
+                        try:
+                            result = fut.result()
+                            if result:
+                                all_results.setdefault(code, {})[mrkt] = result
+                                if mrkt == "NX":
+                                    nxt_success.add(code)
+                        except Exception:
+                            pass
+                # KRX 정규장: change/change_rate는 KRX("J") 기준 우선
+                for code, res in all_results.items():
+                    if krx_regular and "J" in res:
+                        first_done[code] = res["J"]
+                    else:
+                        first_done[code] = res.get("J") or res.get("NX")
 
             # NXT 전용 구간(프리마켓 08:00~08:50 또는 시간외 15:40~20:00)에서 KRX 종가 맵 로드 — NXT 미거래 종목 fallback용
             nxt_afterhours = dtime(15, 40) <= now_t < dtime(20, 0)
@@ -2080,6 +2112,167 @@ _sse_listeners = []          # 연결된 SSE 클라이언트 큐 목록
 _data_lock     = threading.Lock()
 _INTERVAL      = max(1, int(_config.get("refresh_interval", 1)))
 
+# ── KIS WebSocket 실시간 체결가 ──
+_kr_ws_prices  = {}          # code → {current_price, change, change_rate}
+_kr_ws_active  = False       # WebSocket 활성 여부
+_kr_ws_lock    = threading.Lock()
+
+
+def _get_kis_ws_approval_key():
+    """KIS WebSocket 접속 승인키 발급"""
+    kc = _config.get("kis", {})
+    is_paper = kc.get("is_paper", False)
+    base = ("https://openapivts.koreainvestment.com:29443" if is_paper
+            else "https://openapi.koreainvestment.com:9443")
+    try:
+        resp = requests.post(
+            f"{base}/oauth2/Approval",
+            json={"grant_type": "client_credentials",
+                  "appkey":    kc.get("app_key", ""),
+                  "secretkey": kc.get("app_secret", "")},
+            timeout=10, verify=False,
+        )
+        key = resp.json().get("approval_key", "")
+        if key:
+            print("[KIS WS] 승인키 발급 성공")
+        return key
+    except Exception as e:
+        print(f"[KIS WS] 승인키 발급 실패: {e}")
+        return ""
+
+
+def _is_kr_trading_now():
+    """현재 KRX 정규장 시간 여부 (09:00~15:35, 평일, 비공휴일)"""
+    now = datetime.now()
+    return (now.weekday() < 5
+            and now.strftime("%Y-%m-%d") not in KR_HOLIDAYS
+            and dtime(9, 0) <= now.time() < dtime(15, 36))
+
+
+def _run_kr_websocket():
+    """KIS H0STCNT0 실시간 체결가 WebSocket 루프
+    - 장 중(09:00~15:35)에만 연결, 그 외에는 30초 간격으로 재확인
+    - 체결가 수신 시 즉시 포트폴리오 재계산 & socketio emit
+    """
+    import websocket as ws_lib
+    import ssl
+
+    global _kr_ws_active
+
+    while True:
+        if not _is_kr_trading_now():
+            _kr_ws_active = False
+            time.sleep(30)
+            continue
+
+        if not _kis_api:
+            time.sleep(60)
+            continue
+
+        approval_key = _get_kis_ws_approval_key()
+        if not approval_key:
+            time.sleep(60)
+            continue
+
+        kc = _config.get("kis", {})
+        ws_url = ("wss://ops.koreainvestment.com:31000" if kc.get("is_paper")
+                  else "wss://ops.koreainvestment.com:21000")
+        codes = [str(it.get("code", "")).zfill(6)
+                 for it in _config.get("portfolio", []) if it.get("code")]
+
+        def _make_sub_msg(code, tr_type="1"):
+            return json.dumps({
+                "header": {
+                    "approval_key": approval_key,
+                    "custtype":     "P",
+                    "tr_type":      tr_type,
+                    "content-type": "utf-8",
+                },
+                "body": {"input": {"tr_id": "H0STCNT0", "tr_key": code}},
+            })
+
+        def on_open(ws):
+            global _kr_ws_active
+            _kr_ws_active = True
+            print(f"[KIS WS] 연결됨 → {len(codes)}종목 구독")
+            for code in codes:
+                ws.send(_make_sub_msg(code))
+
+        def on_message(ws, message):
+            # PINGPONG 처리
+            if '"tr_id":"PINGPONG"' in message:
+                ws.send(message)
+                return
+            # 실시간 체결가: "0|H0STCNT0|NNN|code^price^sign^chg^rate^..."
+            if not message.startswith("0|H0STCNT0|"):
+                return
+            parts = message.split("|", 3)
+            if len(parts) < 4:
+                return
+            fields = parts[3].split("^")
+            if len(fields) < 6:
+                return
+            try:
+                code     = fields[0]
+                cur      = int(fields[2])
+                sign     = fields[3]   # 2=상승 / 3=보합 / 5=하락 (1=상한 / 4=하한)
+                chg_abs  = int(fields[4])
+                chg_rate = float(fields[5])
+                if sign in ("4", "5"):     # 하락/하한
+                    chg_abs  = -chg_abs
+                    chg_rate = -chg_rate
+                if cur <= 0:
+                    return
+                with _kr_ws_lock:
+                    _kr_ws_prices[code] = {
+                        "current_price": cur,
+                        "change":        chg_abs,
+                        "change_rate":   chg_rate,
+                    }
+                # 포트폴리오 즉시 재계산 후 푸시 (백그라운드)
+                threading.Thread(target=_push_ws_update, daemon=True).start()
+            except Exception as e:
+                print(f"[KIS WS] 파싱 오류: {e}")
+
+        def on_error(ws, error):
+            global _kr_ws_active
+            _kr_ws_active = False
+            print(f"[KIS WS] 오류: {error}")
+
+        def on_close(ws, code, msg):
+            global _kr_ws_active
+            _kr_ws_active = False
+            print(f"[KIS WS] 연결 종료")
+
+        ws_app = ws_lib.WebSocketApp(
+            ws_url,
+            on_open=on_open,
+            on_message=on_message,
+            on_error=on_error,
+            on_close=on_close,
+        )
+        ws_app.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE}, ping_interval=30, ping_timeout=10)
+        _kr_ws_active = False
+        time.sleep(5)   # 재연결 전 대기
+
+
+def _push_ws_update():
+    """KIS WS 체결가 수신 시 포트폴리오 재계산 후 즉시 push"""
+    try:
+        data = build_portfolio()
+        us_cfg = _config.get("us_portfolio")
+        if us_cfg:
+            with _data_lock:
+                us_snapshot = dict(_latest_data.get("us", {})) or None
+            if us_snapshot:
+                data["us"] = us_snapshot   # 최신 캐시 재사용 (US는 REST 주기에 맡김)
+        data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with _data_lock:
+            _latest_data.update(data)
+        _push_to_all(data)
+    except Exception as e:
+        print(f"[KIS WS] push 오류: {e}")
+
 def _push_to_all(data):
     # WebSocket 푸시 (연결된 모든 클라이언트)
     try:
@@ -2296,48 +2489,68 @@ def _auto_batch_if_needed():
         print(f"[자동배치] 오류: {e}")
 
 
+def _run_background_tasks(data):
+    """알림·스냅샷 등 부가 작업 — _price_loop 블로킹 방지용 백그라운드 실행"""
+    try:
+        if _save_daily_snapshot(data):
+            _push_to_all({**data, "history_updated": True})
+        if _save_us_daily_snapshot(data):
+            _push_to_all({**data, "us_history_updated": True})
+        holdings = data.get("kr", {}).get("holdings", [])
+        if holdings:
+            _check_rate_alerts(holdings)
+            _check_high_low_alerts(holdings)
+        _check_open_alert(data)
+        _check_close_alert()
+        _save_nxt_snapshot()
+        _check_nxt_close_alert()
+        if data.get("us", {}).get("holdings"):
+            _check_us_open_alert(data)
+            _check_us_close_alert(data)
+        _save_combined_daily_snapshot()
+        _auto_batch_if_needed()
+    except Exception as e:
+        print(f"[백그라운드] 오류: {e}")
+
+
 def _price_loop():
     while True:
         t0 = time.time()
         try:
             from concurrent.futures import ThreadPoolExecutor
-            # 국내/미국 포트폴리오 병렬 빌드
-            with ThreadPoolExecutor(max_workers=2) as _ex:
-                kr_fut = _ex.submit(build_portfolio)
-                us_fut = _ex.submit(build_us_portfolio) if _config.get("us_portfolio") else None
-                data = kr_fut.result()
-                if us_fut:
-                    try:
-                        data.update(us_fut.result(timeout=15))
-                    except Exception as _e:
-                        print(f"[US 업데이터] 오류: {_e}")
+            has_us = bool(_config.get("us_portfolio"))
 
-            data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with _data_lock:
-                _latest_data.clear()
-                _latest_data.update(data)
-            _push_to_all(data)
-            if _save_daily_snapshot(data):
-                _push_to_all({**data, "history_updated": True})
-            if _save_us_daily_snapshot(data):
-                _push_to_all({**data, "us_history_updated": True})
-            # 국내 텔레그램 알림
-            holdings = data.get("kr", {}).get("holdings", [])
-            if holdings:
-                _check_rate_alerts(holdings)
-                _check_high_low_alerts(holdings)
-            _check_open_alert(data)
-            _check_close_alert()
-            _save_nxt_snapshot()
-            _check_nxt_close_alert()
-            # 미국 텔레그램 알림
-            if data.get("us", {}).get("holdings"):
-                _check_us_open_alert(data)
-                _check_us_close_alert(data)
-            # 종합 일별 스냅샷 (22:00 이후, 주말 포함)
-            threading.Thread(target=_save_combined_daily_snapshot, daemon=True).start()
-            # 전 거래일 데이터 누락 시 자동 배치 (백그라운드)
-            threading.Thread(target=_auto_batch_if_needed, daemon=True).start()
+            # KIS WebSocket 활성 중: KR은 WS가 담당하므로 US만 갱신
+            if _kr_ws_active and _is_kr_trading_now():
+                if has_us:
+                    us_data = build_us_portfolio()
+                    with _data_lock:
+                        _latest_data.update(us_data)
+                        data = dict(_latest_data)
+                    _push_to_all(data)
+                else:
+                    with _data_lock:
+                        data = dict(_latest_data)
+            else:
+                # WS 비활성 시: KR + US 병렬 REST 폴링
+                with ThreadPoolExecutor(max_workers=2) as _ex:
+                    kr_fut = _ex.submit(build_portfolio)
+                    us_fut = _ex.submit(build_us_portfolio) if has_us else None
+                    data = kr_fut.result()
+                    if us_fut:
+                        try:
+                            data.update(us_fut.result(timeout=15))
+                        except Exception as _e:
+                            print(f"[US 업데이터] 오류: {_e}")
+                data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                with _data_lock:
+                    _latest_data.clear()
+                    _latest_data.update(data)
+                _push_to_all(data)
+
+            # 알림·스냅샷은 블로킹하지 않고 백그라운드에서 실행
+            threading.Thread(target=_run_background_tasks, args=(dict(data),), daemon=True).start()
+
         except Exception as e:
             print(f"[업데이터] 오류: {e}")
         elapsed = time.time() - t0
@@ -2348,6 +2561,10 @@ def _price_loop():
 
 _updater = threading.Thread(target=_price_loop, daemon=True)
 _updater.start()
+
+# KIS WebSocket 실시간 체결가 스레드 시작
+_kr_ws_thread = threading.Thread(target=_run_kr_websocket, daemon=True)
+_kr_ws_thread.start()
 
 # ============================================================
 #  텔레그램 명령 수신 (Long Polling)
