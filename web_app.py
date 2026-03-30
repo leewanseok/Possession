@@ -7,6 +7,9 @@
 Flask 기반 실시간 주식 현황 조회
 """
 
+import eventlet
+eventlet.monkey_patch()
+
 import json
 import os
 import sys
@@ -86,7 +89,7 @@ DEFAULT_CONFIG = {
 }
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*", logger=False, engineio_logger=False)
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins="*", logger=False, engineio_logger=False)
 
 # ============================================================
 #  KIS API
@@ -2175,8 +2178,8 @@ def _run_kr_websocket():
             continue
 
         kc = _config.get("kis", {})
-        ws_url = ("wss://ops.koreainvestment.com:31000" if kc.get("is_paper")
-                  else "wss://ops.koreainvestment.com:21000")
+        ws_url = ("ws://ops.koreainvestment.com:31000" if kc.get("is_paper")
+                  else "ws://ops.koreainvestment.com:21000")
         codes = [str(it.get("code", "")).zfill(6)
                  for it in _config.get("portfolio", []) if it.get("code")]
 
@@ -2251,7 +2254,7 @@ def _run_kr_websocket():
             on_error=on_error,
             on_close=on_close,
         )
-        ws_app.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE}, ping_interval=30, ping_timeout=10)
+        ws_app.run_forever(ping_interval=30, ping_timeout=10)
         _kr_ws_active = False
         time.sleep(5)   # 재연결 전 대기
 
@@ -4388,4 +4391,4 @@ if __name__ == "__main__":
             webbrowser.open_new("http://localhost:5000")
         threading.Thread(target=open_browser, daemon=True).start()
 
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
