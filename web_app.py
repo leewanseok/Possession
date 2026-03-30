@@ -692,6 +692,10 @@ def build_us_portfolio():
         premarket_start = dtime(17, 0)  if is_dst else dtime(18, 0)
         market_open     = dtime(22, 30) if is_dst else dtime(23, 30)
         is_us_premarket = not is_us_closed and (premarket_start <= now_t < market_open)
+        # 애프터마켓 구간
+        aftermarket_end = dtime(9, 0)  if is_dst else dtime(10, 0)
+        market_close    = dtime(5, 0)  if is_dst else dtime(6, 0)
+        is_us_aftermarket = not is_us_closed and (market_close <= now_t < aftermarket_end)
 
         if is_us_closed:
             for it in items:
@@ -802,7 +806,8 @@ def build_us_portfolio():
             "total_profit_rate":   total_profit_rate,
             "exchange_rate_source":     _exrate_cache.get("source", "기준"),
             "exchange_rate_updated_at": _exrate_cache.get("updated_at", ""),
-            "is_premarket":      is_us_premarket if _kis_api else False,
+            "is_premarket":      is_us_premarket   if _kis_api else False,
+            "is_aftermarket":    is_us_aftermarket if _kis_api else False,
         }
     }
 
