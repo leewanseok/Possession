@@ -667,6 +667,7 @@
   }
 </style>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
 <body>
 
@@ -1414,6 +1415,7 @@ const localDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'
 let sortCol = -1, sortAsc = true;
 let prevPrices = {};
 let _pollTimer = null;
+let _socket = null;
 let _lastData = null;
 let _lastCheckedDate = localDate(new Date());
 let _usData = null;
@@ -1475,42 +1477,48 @@ function _setStatus(color, text) {
   document.getElementById('status-text').textContent = text;
 }
 
-function connectSSE() {
-  if (_pollTimer) { clearTimeout(_pollTimer); _pollTimer = null; }
-
-  async function poll() {
-    try {
-      const res = await fetch('/api/portfolio');
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      _lastData = data;
-      if (data.us) { _usData = data.us; if (document.getElementById('tab-us').classList.contains('active')) renderUsPortfolio(); }
-      renderPortfolio(data);
-      document.getElementById('last-update').textContent = data.updated_at || '';
-      updateChartRealtime(data);
-      updateHistoryRealtime(data);
-      if (document.getElementById('tab-all').classList.contains('active')) renderAllTab();
-      _setStatus('#44cc88', '실시간');
-      const interval = Math.max(1, data.refresh_interval || 3) * 1000;
-      _pollTimer = setTimeout(poll, interval);
-    } catch(e) {
-      _setStatus('#f5c842', '재연결 중...');
-      _pollTimer = setTimeout(poll, 5000);
-    }
-  }
-
-  poll();
+function _handlePortfolioData(data) {
+  _lastData = data;
+  if (data.us) { _usData = data.us; if (document.getElementById('tab-us').classList.contains('active')) renderUsPortfolio(); }
+  renderPortfolio(data);
+  document.getElementById('last-update').textContent = data.updated_at || '';
+  updateChartRealtime(data);
+  updateHistoryRealtime(data);
+  if (document.getElementById('tab-all').classList.contains('active')) renderAllTab();
+  _setStatus('#44cc88', '실시간');
 }
 
-// 종목 추가/삭제 후 즉시 갱신용 (SSE와 별개로 한 번 호출)
+function connectSSE() {
+  if (_pollTimer) { clearTimeout(_pollTimer); _pollTimer = null; }
+  if (_socket) { _socket.disconnect(); _socket = null; }
+
+  _socket = io({ transports: ['websocket'], reconnection: true, reconnectionDelay: 2000, reconnectionDelayMax: 10000 });
+
+  _socket.on('connect', () => {
+    _setStatus('#44cc88', '실시간');
+    console.log('[WS] 연결됨');
+  });
+
+  _socket.on('portfolio', (data) => {
+    _handlePortfolioData(data);
+  });
+
+  _socket.on('disconnect', () => {
+    _setStatus('#f5c842', '재연결 중...');
+    console.log('[WS] 연결 끊김, 재연결 대기');
+  });
+
+  _socket.on('connect_error', () => {
+    _setStatus('#f5c842', '재연결 중...');
+  });
+}
+
+// 종목 추가/삭제 후 즉시 갱신용 (WS와 별개로 한 번 호출)
 async function loadPortfolio() {
   try {
     const res  = await fetch('/api/portfolio');
     const data = await res.json();
-    _lastData = data;
-    if (data.us) { _usData = data.us; if (document.getElementById('tab-us').classList.contains('active')) renderUsPortfolio(); }
-    renderPortfolio(data);
-    document.getElementById('last-update').textContent = data.updated_at || '';
+    _handlePortfolioData(data);
   } catch(e) {}
 }
 

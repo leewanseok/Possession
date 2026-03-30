@@ -17,6 +17,7 @@ import warnings
 from datetime import datetime, time as dtime, timedelta
 from queue import Queue, Empty
 from flask import Flask, jsonify, render_template, request, Response, stream_with_context
+from flask_socketio import SocketIO, emit as socketio_emit
 
 warnings.filterwarnings("ignore")
 
@@ -85,6 +86,7 @@ DEFAULT_CONFIG = {
 }
 
 app = Flask(__name__)
+socketio = SocketIO(app, async_mode='threading', cors_allowed_origins="*", logger=False, engineio_logger=False)
 
 # ============================================================
 #  KIS API
@@ -2079,6 +2081,12 @@ _data_lock     = threading.Lock()
 _INTERVAL      = max(1, int(_config.get("refresh_interval", 1)))
 
 def _push_to_all(data):
+    # WebSocket 푸시 (연결된 모든 클라이언트)
+    try:
+        socketio.emit('portfolio', data)
+    except Exception as e:
+        print(f"[WS] emit 오류: {e}")
+    # SSE 폴백 (하위 호환)
     dead = []
     for q in _sse_listeners:
         try:
@@ -2797,6 +2805,18 @@ def api_ping():
     global _last_ping
     _last_ping = time.time()
     return "", 204
+
+# ── WebSocket 이벤트 핸들러 ──
+@socketio.on('connect')
+def handle_ws_connect():
+    """클라이언트 접속 시 현재 캐시 데이터 즉시 전송"""
+    with _data_lock:
+        if _latest_data:
+            socketio_emit('portfolio', dict(_latest_data))
+
+@socketio.on('disconnect')
+def handle_ws_disconnect():
+    pass
 
 @app.route("/api/stream")
 def api_stream():
@@ -4139,4 +4159,4 @@ if __name__ == "__main__":
             webbrowser.open_new("http://localhost:5000")
         threading.Thread(target=open_browser, daemon=True).start()
 
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)
