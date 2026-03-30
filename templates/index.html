@@ -882,7 +882,7 @@
 
     <!-- 보유 종목 -->
     <div class="manage-row">
-      <div class="section-title" style="margin:0;flex:1">미국 보유 종목</div>
+      <div class="section-title" style="margin:0;flex:1">미국 보유 종목 <span id="us-premarket-badge" style="display:none;font-size:11px;font-weight:600;color:#f5c842;background:rgba(245,200,66,.15);border:1px solid rgba(245,200,66,.4);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle">프리마켓</span></div>
       <button class="btn btn-sm" onclick="openUsAddModal()">＋ 종목 추가</button>
     </div>
     <div class="table-wrap">
@@ -3828,6 +3828,10 @@ function renderUsPortfolio() {
   const exDate = localDate(new Date()); // KST date
   document.getElementById('us-exrate').textContent = exRate.toLocaleString('ko-KR', {maximumFractionDigits: 0}) + '원';
   document.getElementById('us-exrate-time').textContent = `(${exDate})`;
+
+  // 프리마켓 배지
+  const badge = document.getElementById('us-premarket-badge');
+  if (badge) badge.style.display = us.is_premarket ? 'inline' : 'none';
 
   // 요약 카드
   const evalUsd   = us.total_eval_usd   || 0;

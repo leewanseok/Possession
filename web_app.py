@@ -674,16 +674,24 @@ def build_us_portfolio():
     price_map = {}
 
     if _kis_api:
-        # 미국 장 마감 구간: 마감(EDT 05:00 / EST 06:00) ~ 개장(EDT 22:30 / EST 23:30)
+        # 미국 거래 시간대 구분 (KST 기준, EDT 써머타임)
+        # 프리마켓:   EDT 17:00~22:30 / EST 18:00~23:30
+        # 정규장:     EDT 22:30~05:00 / EST 23:30~06:00
+        # 애프터마켓: EDT 05:00~09:00 / EST 06:00~10:00
+        # 완전마감:   EDT 09:00~17:00 / EST 10:00~18:00  ← 캐시만 사용
         now_dt    = datetime.now()
         now_t     = now_dt.time()
         dow       = now_dt.weekday()
         today_str = now_dt.strftime("%Y-%m-%d")
         is_dst    = _is_us_dst(now_dt)
-        # EDT(써머타임): 05:00~22:30 마감 / EST: 06:00~23:30 마감
-        market_close = dtime(5, 0)  if is_dst else dtime(6, 0)
-        market_open  = dtime(22, 30) if is_dst else dtime(23, 30)
-        is_us_closed = (dow >= 5) or today_str in US_HOLIDAYS or (market_close <= now_t < market_open)
+        # 완전 마감 구간 (거래 없음)
+        true_closed_start = dtime(9, 0)  if is_dst else dtime(10, 0)
+        true_closed_end   = dtime(17, 0) if is_dst else dtime(18, 0)
+        is_us_closed   = (dow >= 5) or today_str in US_HOLIDAYS or (true_closed_start <= now_t < true_closed_end)
+        # 프리마켓 구간
+        premarket_start = dtime(17, 0)  if is_dst else dtime(18, 0)
+        market_open     = dtime(22, 30) if is_dst else dtime(23, 30)
+        is_us_premarket = not is_us_closed and (premarket_start <= now_t < market_open)
 
         if is_us_closed:
             for it in items:
@@ -691,6 +699,7 @@ def build_us_portfolio():
                 if t in us_cached:
                     price_map[t] = us_cached[t]
         else:
+            # 정규장 / 프리마켓 / 애프터마켓 모두 KIS API 실시간 조회
             pairs = [(it.get("ticker", "").upper(), it.get("exchange") or None) for it in items]
             with ThreadPoolExecutor(max_workers=max(len(pairs), 1)) as ex:
                 futs = {ex.submit(_kis_api.fetch_us_price, t, e): t for t, e in pairs}
@@ -793,6 +802,7 @@ def build_us_portfolio():
             "total_profit_rate":   total_profit_rate,
             "exchange_rate_source":     _exrate_cache.get("source", "기준"),
             "exchange_rate_updated_at": _exrate_cache.get("updated_at", ""),
+            "is_premarket":      is_us_premarket if _kis_api else False,
         }
     }
 
