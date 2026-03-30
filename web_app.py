@@ -674,11 +674,16 @@ def build_us_portfolio():
     price_map = {}
 
     if _kis_api:
-        # KST 10:00~18:00 = 미국 장 완전 마감 구간 → 캐시 사용
-        now_t    = datetime.now().time()
-        dow      = datetime.now().weekday()
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        is_us_closed = (dow >= 5) or today_str in US_HOLIDAYS or (dtime(10, 0) <= now_t < dtime(18, 0))
+        # 미국 장 마감 구간: 마감(EDT 05:00 / EST 06:00) ~ 개장(EDT 22:30 / EST 23:30)
+        now_dt    = datetime.now()
+        now_t     = now_dt.time()
+        dow       = now_dt.weekday()
+        today_str = now_dt.strftime("%Y-%m-%d")
+        is_dst    = _is_us_dst(now_dt)
+        # EDT(써머타임): 05:00~22:30 마감 / EST: 06:00~23:30 마감
+        market_close = dtime(5, 0)  if is_dst else dtime(6, 0)
+        market_open  = dtime(22, 30) if is_dst else dtime(23, 30)
+        is_us_closed = (dow >= 5) or today_str in US_HOLIDAYS or (market_close <= now_t < market_open)
 
         if is_us_closed:
             for it in items:
