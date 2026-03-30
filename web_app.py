@@ -2218,12 +2218,8 @@ def _run_kr_websocket():
             try:
                 code     = fields[0]
                 cur      = int(fields[2])
-                sign     = fields[3]   # 2=상승 / 3=보합 / 5=하락 (1=상한 / 4=하한)
-                chg_abs  = int(fields[4])
-                chg_rate = float(fields[5])
-                if sign in ("4", "5"):     # 하락/하한
-                    chg_abs  = -chg_abs
-                    chg_rate = -chg_rate
+                chg_abs  = int(fields[4])      # WebSocket은 이미 부호 포함된 값
+                chg_rate = float(fields[5])    # (REST API와 달리 별도 sign 처리 불필요)
                 if cur <= 0:
                     return
                 with _kr_ws_lock:
