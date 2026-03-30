@@ -695,22 +695,28 @@ def build_us_portfolio():
         aftermarket_end = dtime(9, 0)  if is_dst else dtime(10, 0)
         is_us_aftermarket = not is_weekend_holiday and (market_close <= now_t < aftermarket_end)
 
-        # 항상 KIS API 실시간 조회 (주말/휴장일 포함 — 직전 종가 반환)
-        pairs = [(it.get("ticker", "").upper(), it.get("exchange") or None) for it in items]
-        with ThreadPoolExecutor(max_workers=max(len(pairs), 1)) as ex:
-            futs = {ex.submit(_kis_api.fetch_us_price, t, e): t for t, e in pairs}
-            for fut in as_completed(futs):
-                ticker = futs[fut]
-                try:
-                    r = fut.result()
-                    if r:
-                        price_map[ticker] = r
-                        # exchange 자동 감지 → config 저장
-                        for it in items:
-                            if it.get("ticker", "").upper() == ticker and not it.get("exchange"):
-                                it["exchange"] = r["exchange"]
-                except Exception:
-                    pass
+        if is_weekend_holiday:
+            # 주말/휴장일: 캐시만 사용
+            for it in items:
+                t = it.get("ticker", "").upper()
+                if t in us_cached:
+                    price_map[t] = us_cached[t]
+        else:
+            # 평일: 모든 시간대 KIS API 실시간 조회, 실패 시 캐시 fallback
+            pairs = [(it.get("ticker", "").upper(), it.get("exchange") or None) for it in items]
+            with ThreadPoolExecutor(max_workers=max(len(pairs), 1)) as ex:
+                futs = {ex.submit(_kis_api.fetch_us_price, t, e): t for t, e in pairs}
+                for fut in as_completed(futs):
+                    ticker = futs[fut]
+                    try:
+                        r = fut.result()
+                        if r:
+                            price_map[ticker] = r
+                            for it in items:
+                                if it.get("ticker", "").upper() == ticker and not it.get("exchange"):
+                                    it["exchange"] = r["exchange"]
+                    except Exception:
+                        pass
 
     # 캐시 fallback
     for it in items:
