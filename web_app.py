@@ -685,7 +685,8 @@ def build_us_portfolio():
         dow       = now_dt.weekday()
         today_str = now_dt.strftime("%Y-%m-%d")
         is_dst    = _is_us_dst(now_dt)
-        is_weekend_holiday = (dow >= 5) or today_str in US_HOLIDAYS
+        # 월요일 00:00~09:00 KST는 사실상 일요일 연장 (미국장 미개장) → 캐시 사용
+        is_weekend_holiday = (dow >= 5) or today_str in US_HOLIDAYS or (dow == 0 and now_t < dtime(9, 0))
         # 프리마켓 구간
         premarket_start = dtime(17, 0)  if is_dst else dtime(18, 0)
         market_open     = dtime(22, 30) if is_dst else dtime(23, 30)
