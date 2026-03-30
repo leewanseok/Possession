@@ -2229,8 +2229,8 @@ def _run_kr_websocket():
                         "change":        chg_abs,
                         "change_rate":   chg_rate,
                     }
-                # 포트폴리오 즉시 재계산 후 푸시 (백그라운드)
-                threading.Thread(target=_push_ws_update, daemon=True).start()
+                # 단일 push 스레드에 신호만 전달 (스레드 생성 없음)
+                _ws_push_event.set()
             except Exception as e:
                 print(f"[KIS WS] 파싱 오류: {e}")
 
@@ -2256,22 +2256,30 @@ def _run_kr_websocket():
         time.sleep(5)   # 재연결 전 대기
 
 
-def _push_ws_update():
-    """KIS WS 체결가 수신 시 포트폴리오 재계산 후 즉시 push"""
-    try:
-        data = build_portfolio()
-        us_cfg = _config.get("us_portfolio")
-        if us_cfg:
+# KIS WS push 전담 스레드용 Event
+_ws_push_event = threading.Event()
+
+def _ws_push_worker():
+    """KIS WS 체결가 push 전담 스레드
+    - 틱 수신 시 Event.set()으로 신호만 받음 → 스레드 생성 0
+    - 작업 중 추가 틱이 와도 완료 후 즉시 재처리 → 데이터 손실 없음
+    - race condition 없음 (단일 스레드가 순서대로 처리)
+    """
+    while True:
+        _ws_push_event.wait()      # 틱 신호 대기
+        _ws_push_event.clear()     # 신호 소비 (이후 추가 틱은 다시 set됨)
+        try:
+            data = build_portfolio()
             with _data_lock:
-                us_snapshot = dict(_latest_data.get("us", {})) or None
-            if us_snapshot:
-                data["us"] = us_snapshot   # 최신 캐시 재사용 (US는 REST 주기에 맡김)
-        data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with _data_lock:
-            _latest_data.update(data)
-        _push_to_all(data)
-    except Exception as e:
-        print(f"[KIS WS] push 오류: {e}")
+                us_snap = dict(_latest_data.get("us", {}))
+            if us_snap:
+                data["us"] = us_snap   # US는 REST 주기에 맡김
+            data["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with _data_lock:
+                _latest_data.update(data)
+            _push_to_all(data)
+        except Exception as e:
+            print(f"[KIS WS] push 오류: {e}")
 
 def _push_to_all(data):
     # WebSocket 푸시 (연결된 모든 클라이언트)
@@ -2565,6 +2573,10 @@ _updater.start()
 # KIS WebSocket 실시간 체결가 스레드 시작
 _kr_ws_thread = threading.Thread(target=_run_kr_websocket, daemon=True)
 _kr_ws_thread.start()
+
+# WS push 전담 스레드 시작
+_ws_push_worker_thread = threading.Thread(target=_ws_push_worker, daemon=True)
+_ws_push_worker_thread.start()
 
 # ============================================================
 #  텔레그램 명령 수신 (Long Polling)
