@@ -678,47 +678,39 @@ def build_us_portfolio():
         # 프리마켓:   EDT 17:00~22:30 / EST 18:00~23:30
         # 정규장:     EDT 22:30~05:00 / EST 23:30~06:00
         # 애프터마켓: EDT 05:00~09:00 / EST 06:00~10:00
-        # 완전마감:   EDT 09:00~17:00 / EST 10:00~18:00  ← 캐시만 사용
+        # 마감:       EDT 09:00~17:00 / EST 10:00~18:00
+        # → 모든 시간대 KIS API 실시간 조회 (실패 시 캐시 fallback)
         now_dt    = datetime.now()
         now_t     = now_dt.time()
         dow       = now_dt.weekday()
         today_str = now_dt.strftime("%Y-%m-%d")
         is_dst    = _is_us_dst(now_dt)
-        # 완전 마감 구간 (거래 없음)
-        true_closed_start = dtime(9, 0)  if is_dst else dtime(10, 0)
-        true_closed_end   = dtime(17, 0) if is_dst else dtime(18, 0)
-        is_us_closed   = (dow >= 5) or today_str in US_HOLIDAYS or (true_closed_start <= now_t < true_closed_end)
+        is_weekend_holiday = (dow >= 5) or today_str in US_HOLIDAYS
         # 프리마켓 구간
         premarket_start = dtime(17, 0)  if is_dst else dtime(18, 0)
         market_open     = dtime(22, 30) if is_dst else dtime(23, 30)
-        is_us_premarket = not is_us_closed and (premarket_start <= now_t < market_open)
+        is_us_premarket = not is_weekend_holiday and (premarket_start <= now_t < market_open)
         # 애프터마켓 구간
-        aftermarket_end = dtime(9, 0)  if is_dst else dtime(10, 0)
         market_close    = dtime(5, 0)  if is_dst else dtime(6, 0)
-        is_us_aftermarket = not is_us_closed and (market_close <= now_t < aftermarket_end)
+        aftermarket_end = dtime(9, 0)  if is_dst else dtime(10, 0)
+        is_us_aftermarket = not is_weekend_holiday and (market_close <= now_t < aftermarket_end)
 
-        if is_us_closed:
-            for it in items:
-                t = it.get("ticker", "").upper()
-                if t in us_cached:
-                    price_map[t] = us_cached[t]
-        else:
-            # 정규장 / 프리마켓 / 애프터마켓 모두 KIS API 실시간 조회
-            pairs = [(it.get("ticker", "").upper(), it.get("exchange") or None) for it in items]
-            with ThreadPoolExecutor(max_workers=max(len(pairs), 1)) as ex:
-                futs = {ex.submit(_kis_api.fetch_us_price, t, e): t for t, e in pairs}
-                for fut in as_completed(futs):
-                    ticker = futs[fut]
-                    try:
-                        r = fut.result()
-                        if r:
-                            price_map[ticker] = r
-                            # exchange 자동 감지 → config 저장
-                            for it in items:
-                                if it.get("ticker", "").upper() == ticker and not it.get("exchange"):
-                                    it["exchange"] = r["exchange"]
-                    except Exception:
-                        pass
+        # 항상 KIS API 실시간 조회 (주말/휴장일 포함 — 직전 종가 반환)
+        pairs = [(it.get("ticker", "").upper(), it.get("exchange") or None) for it in items]
+        with ThreadPoolExecutor(max_workers=max(len(pairs), 1)) as ex:
+            futs = {ex.submit(_kis_api.fetch_us_price, t, e): t for t, e in pairs}
+            for fut in as_completed(futs):
+                ticker = futs[fut]
+                try:
+                    r = fut.result()
+                    if r:
+                        price_map[ticker] = r
+                        # exchange 자동 감지 → config 저장
+                        for it in items:
+                            if it.get("ticker", "").upper() == ticker and not it.get("exchange"):
+                                it["exchange"] = r["exchange"]
+                except Exception:
+                    pass
 
     # 캐시 fallback
     for it in items:
