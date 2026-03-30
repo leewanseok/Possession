@@ -4543,42 +4543,31 @@ function _updateAllTodayRow() {
   const coin_eval = coin.total_eval || 0;
   if (!coin_eval) return;
 
-  // KR 평가금액:
-  //   1순위: history.json 오늘 배치값 (15:35 KRX 종가 확정 후 저장)
-  //   2순위: 실시간 (장 중 또는 배치 미완료)
-  //   3순위: combined_history 최신 배치값 (주말/휴장일)
-  // US 평가금액: 항상 실시간 (정규장·프리마켓·애프터마켓 포함)
-  //   단, 주말/휴장일은 combined_history 배치값
+  // 평일: 배치 완료 시 배치값 우선, 미완료 시 실시간
+  // 주말: combined_history 배치값
   // 코인: 항상 실시간
   const now = new Date();
   const dow = now.getDay(); // 0=일, 6=토
-  const nowMin = now.getHours() * 60 + now.getMinutes();
   const isWeekend = (dow === 0 || dow === 6);
-  const isKrMarketHours = (dow >= 1 && dow <= 5) && (nowMin >= 9 * 60) && (nowMin < 15 * 60 + 36);
 
-  // KR: 오늘 배치 레코드 확인 (history.json)
+  // 오늘 배치 완료 여부
   const krTodayBatch = _allHistoryRows.find(r => r.date === todayStr);
+  const usTodayBatch = (_allUsHistoryRows || []).find(r => r.date === todayStr);
 
   let kr_eval, us_eval;
-  if (krTodayBatch && krTodayBatch.total_eval > 0) {
-    // 배치 완료: history.json 오늘 종가 기준
-    kr_eval = krTodayBatch.total_eval;
-  } else if (isKrMarketHours && (kr.total_eval || 0) > 0) {
-    // 장 중: 실시간
-    kr_eval = kr.total_eval || 0;
-  } else {
-    // 주말/휴장/배치 전: combined_history 최신값
+  if (isWeekend) {
     const latestRec = _allCombinedHistory[0];
     kr_eval = latestRec?.kr_eval || (kr.total_eval || 0);
-  }
-
-  if (isWeekend) {
-    // 주말: combined_history 배치값
-    const latestRec = _allCombinedHistory[0];
     us_eval = latestRec?.us_eval || (us.total_eval_krw || 0);
   } else {
-    // 평일: 실시간 (프리마켓·정규장·애프터마켓 모두 포함)
-    us_eval = (us.total_eval_krw || 0) || (_allCombinedHistory[0]?.us_eval || 0);
+    // KR: 배치 완료 → 배치값, 미완료 → 실시간
+    kr_eval = (krTodayBatch?.total_eval > 0)
+      ? krTodayBatch.total_eval
+      : (kr.total_eval || _allCombinedHistory[0]?.kr_eval || 0);
+    // US: 배치 완료 → 배치값, 미완료 → 실시간
+    us_eval = (usTodayBatch?.total_eval_krw > 0)
+      ? usTodayBatch.total_eval_krw
+      : (us.total_eval_krw || _allCombinedHistory[0]?.us_eval || 0);
   }
 
   const tb = (kr.total_buy||0) + (us.total_buy_krw||0) + (coin.total_buy||0);
