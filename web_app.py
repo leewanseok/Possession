@@ -1718,6 +1718,7 @@ def _check_high_low_alerts(holdings: list):
 
 def _check_close_alert():
     """장 마감 후 보유종목 종합 알림 - KRX 종가 강제 조회 (하루 1번)"""
+    global _close_alert_sent_date
     now = datetime.now()
     if now.weekday() >= 5:
         return
@@ -1726,7 +1727,8 @@ def _check_close_alert():
     if now.time() < dtime(15, 36):  # 종가 스냅샷(15:35) 저장 후 발송
         return
     today = now.strftime("%Y-%m-%d")
-    if _load_close_alert_date() == today:
+    # 인메모리 1차 확인 (락 없이 빠르게)
+    if _close_alert_sent_date == today:
         return
 
     # 오늘 스냅샷이 저장된 후에만 발송
@@ -1743,6 +1745,15 @@ def _check_close_alert():
             return  # 오늘 KRX 종가 데이터 없음 (아직 15:35 미도달)
     except Exception:
         return
+
+    # 모든 데이터 준비 완료 → 락 획득 후 최종 중복 체크 및 플래그 선점
+    with _close_alert_lock:
+        if _close_alert_sent_date == today:
+            return
+        if _load_close_alert_date() == today:
+            _close_alert_sent_date = today
+            return
+        _close_alert_sent_date = today
 
     holdings     = krx.get("holdings", [])
     if not holdings:
@@ -1796,6 +1807,7 @@ def _check_close_alert():
 
 def _check_nxt_close_alert():
     """NXT 장 마감(20:00) 후 20:05에 보유종목 종합 알림 (하루 1번)"""
+    global _nxt_close_alert_sent_date
     now = datetime.now()
     if now.weekday() >= 5:
         return
@@ -1804,7 +1816,8 @@ def _check_nxt_close_alert():
     if not (dtime(20, 5) <= now.time() < dtime(23, 59)):
         return
     today = now.strftime("%Y-%m-%d")
-    if _load_nxt_close_alert_date() == today:
+    # 인메모리 1차 확인 (락 없이 빠르게)
+    if _nxt_close_alert_sent_date == today:
         return
 
     # nxt_close.json 에서 NXT 종가 스냅샷 로드 (19:55~20:00 저장)
@@ -1819,6 +1832,15 @@ def _check_nxt_close_alert():
     holdings     = nxt.get("holdings", [])
     if not holdings:
         return
+
+    # 모든 데이터 준비 완료 → 락 획득 후 최종 중복 체크 및 플래그 선점
+    with _nxt_close_alert_lock:
+        if _nxt_close_alert_sent_date == today:
+            return
+        if _load_nxt_close_alert_date() == today:
+            _nxt_close_alert_sent_date = today
+            return
+        _nxt_close_alert_sent_date = today
 
     total_eval   = nxt.get("total_eval", 0)
     total_profit = nxt.get("total_profit", 0)
@@ -1915,6 +1937,7 @@ def _is_us_dst(dt=None) -> bool:
 def _check_us_open_alert(portfolio_data: dict):
     """미국 정규장 시작 보유종목 알림 (하루 1번)
     EDT(써머타임): 22:30 KST / EST: 23:30 KST"""
+    global _us_open_alert_sent_date
     now = datetime.now()
     if now.weekday() >= 5:
         return
@@ -1925,13 +1948,23 @@ def _check_us_open_alert(portfolio_data: dict):
     if not (open_h <= now.time() < open_end):
         return
     today = now.strftime("%Y-%m-%d")
-    if _load_us_open_alert_date() == today:
+    # 인메모리 1차 확인 (락 없이 빠르게)
+    if _us_open_alert_sent_date == today:
         return
 
     us       = portfolio_data.get("us", {})
     holdings = us.get("holdings", [])
     if not holdings:
         return
+
+    # 모든 데이터 준비 완료 → 락 획득 후 최종 중복 체크 및 플래그 선점
+    with _us_open_alert_lock:
+        if _us_open_alert_sent_date == today:
+            return
+        if _load_us_open_alert_date() == today:
+            _us_open_alert_sent_date = today
+            return
+        _us_open_alert_sent_date = today
 
     ex_rate          = us.get("exchange_rate", 1380)
     total_eval_usd   = us.get("total_eval_usd", 0)
@@ -1975,6 +2008,7 @@ def _check_us_close_alert(portfolio_data: dict):
     """미국 정규장 마감 보유종목 알림 (하루 1번)
     EDT(써머타임): 05:00 KST / EST: 06:00 KST
     마감 시각 05:00 KST = 전날 16:00 EDT → 미국 실제 거래일은 KST 기준 전일"""
+    global _us_close_alert_sent_date
     now = datetime.now()
     close_h = dtime(5, 0) if _is_us_dst(now) else dtime(6, 0)
     close_end = dtime(close_h.hour, close_h.minute + 10)
@@ -1990,13 +2024,23 @@ def _check_us_close_alert(portfolio_data: dict):
     if us_date_str in US_HOLIDAYS:
         return
     today = now.strftime("%Y-%m-%d")
-    if _load_us_close_alert_date() == today:
+    # 인메모리 1차 확인 (락 없이 빠르게)
+    if _us_close_alert_sent_date == today:
         return
 
     us       = portfolio_data.get("us", {})
     holdings = us.get("holdings", [])
     if not holdings:
         return
+
+    # 모든 데이터 준비 완료 → 락 획득 후 최종 중복 체크 및 플래그 선점
+    with _us_close_alert_lock:
+        if _us_close_alert_sent_date == today:
+            return
+        if _load_us_close_alert_date() == today:
+            _us_close_alert_sent_date = today
+            return
+        _us_close_alert_sent_date = today
 
     ex_rate          = us.get("exchange_rate", 1380)
     total_eval_usd   = us.get("total_eval_usd", 0)
@@ -2037,7 +2081,8 @@ def _check_us_close_alert(portfolio_data: dict):
 
 
 def _check_open_alert(portfolio_data: dict):
-    """KRX 장 시작 후(09:05~09:10) 보유종목 시가 기준 알림 (하루 1번)"""
+    """KRX 장 시작 후(09:02~09:07) 보유종목 시가 기준 알림 (하루 1번)"""
+    global _open_alert_sent_date
     now = datetime.now()
     if now.weekday() >= 5:
         return
@@ -2046,7 +2091,8 @@ def _check_open_alert(portfolio_data: dict):
     if not (dtime(9, 2) <= now.time() < dtime(9, 7)):
         return
     today = now.strftime("%Y-%m-%d")
-    if _load_open_alert_date() == today:
+    # 인메모리 1차 확인 (락 없이 빠르게) — 이미 발송한 날이면 즉시 종료
+    if _open_alert_sent_date == today:
         return
 
     kr       = portfolio_data.get("kr", {})
@@ -2066,6 +2112,16 @@ def _check_open_alert(portfolio_data: dict):
     # 시가가 0인 종목이 과반이면 아직 미체결 — 다음 루프에서 재시도
     if sum(1 for v in krx_price_map.values() if v.get("open", 0) > 0) < len(holdings) // 2 + 1:
         return
+
+    # 모든 데이터 준비 완료 → 락 획득 후 최종 중복 체크 및 플래그 선점
+    # (여기까지 통과한 여러 스레드 중 오직 한 스레드만 발송)
+    with _open_alert_lock:
+        if _open_alert_sent_date == today:
+            return
+        if _load_open_alert_date() == today:
+            _open_alert_sent_date = today
+            return
+        _open_alert_sent_date = today   # 선점: 락 해제 후 다른 스레드는 인메모리 플래그로 차단
 
     # 시가 기준 총 평가금액 / 손익 계산
     total_buy  = sum(h.get("buy_amount", 0) for h in holdings)
@@ -2138,6 +2194,20 @@ _INTERVAL      = max(1, int(_config.get("refresh_interval", 1)))
 _kr_ws_prices  = {}          # code → {current_price, change, change_rate}
 _kr_ws_active  = False       # WebSocket 활성 여부
 _kr_ws_lock    = threading.Lock()
+
+# ── 알림 중복 방지 (레이스 컨디션 방어) ──
+# 파일 I/O만으로는 동시 실행 스레드가 모두 "미발송"으로 판단할 수 있으므로
+# 인메모리 락 + 발송일 변수로 1차 차단 후 파일로 영구 저장
+_open_alert_lock      = threading.Lock()
+_open_alert_sent_date = _load_open_alert_date()       # 재시작 후 당일 중복 발송 방지
+_close_alert_lock      = threading.Lock()
+_close_alert_sent_date = _load_close_alert_date()
+_nxt_close_alert_lock      = threading.Lock()
+_nxt_close_alert_sent_date = _load_nxt_close_alert_date()
+_us_open_alert_lock      = threading.Lock()
+_us_open_alert_sent_date = _load_us_open_alert_date()
+_us_close_alert_lock      = threading.Lock()
+_us_close_alert_sent_date = _load_us_close_alert_date()
 
 
 def _get_kis_ws_approval_key():
