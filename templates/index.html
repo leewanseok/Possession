@@ -538,19 +538,15 @@
     letter-spacing: .3px;
     vertical-align: middle;
   }
-  .exrate-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 14px;
-    margin-bottom: 14px;
+  /* 미국 타이틀 환율 인라인 */
+  .us-exrate-inline {
     font-size: 12px;
     color: var(--text2);
+    font-weight: 400;
+    margin-left: 10px;
+    vertical-align: middle;
   }
-  .exrate-bar b { color: var(--gold); font-size: 13px; }
+  .us-exrate-inline b { color: var(--gold); }
 
   /* 토스트 알림 */
   #toast {
@@ -850,13 +846,6 @@
   <!-- ═══════════════════════════════════════════ 미국 탭 -->
   <div class="tab-panel" id="tab-us">
 
-    <!-- 환율 바 -->
-    <div class="exrate-bar">
-      <span>USD/KRW</span>
-      <b id="us-exrate">-</b>
-      <span id="us-exrate-time" style="font-size:12px;color:var(--text2)"></span>
-    </div>
-
     <!-- 요약 카드 -->
     <div class="summary-grid">
       <div class="card">
@@ -882,7 +871,14 @@
 
     <!-- 보유 종목 -->
     <div class="manage-row">
-      <div class="section-title" style="margin:0;flex:1">미국 보유 종목 <span id="us-premarket-badge" style="display:none;font-size:11px;font-weight:600;color:#f5c842;background:rgba(245,200,66,.15);border:1px solid rgba(245,200,66,.4);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle">프리마켓</span><span id="us-aftermarket-badge" style="display:none;font-size:11px;font-weight:600;color:#a78bfa;background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.4);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle">애프터마켓</span></div>
+      <div class="section-title" style="margin:0;flex:1">미국 보유 종목
+        <span id="us-market-badge-holiday"    style="display:none;font-size:11px;font-weight:600;color:#8892a4;background:rgba(136,146,164,.12);border:1px solid rgba(136,146,164,.35);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle">휴장</span>
+        <span id="us-market-badge-daytime"    style="display:none;font-size:11px;font-weight:600;color:#60a5fa;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.35);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle">주간거래</span>
+        <span id="us-premarket-badge"         style="display:none;font-size:11px;font-weight:600;color:#f5c842;background:rgba(245,200,66,.15);border:1px solid rgba(245,200,66,.4);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle">프리마켓</span>
+        <span id="us-market-badge-regular"    style="display:none;font-size:11px;font-weight:600;color:#22c55e;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.4);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle">정규장</span>
+        <span id="us-aftermarket-badge"       style="display:none;font-size:11px;font-weight:600;color:#a78bfa;background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.4);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle">애프터마켓</span>
+        <span class="us-exrate-inline">USD/KRW <b id="us-exrate">-</b></span>
+      </div>
       <button class="btn btn-sm" onclick="openUsAddModal()">＋ 종목 추가</button>
     </div>
     <div class="table-wrap">
@@ -3824,16 +3820,21 @@ function renderUsPortfolio() {
   }
 
   const exRate = us.exchange_rate || 1380;
-  const exSrc = us.exchange_rate_source || '기준';
-  const exDate = localDate(new Date()); // KST date
-  document.getElementById('us-exrate').textContent = exRate.toLocaleString('ko-KR', {maximumFractionDigits: 0}) + '원';
-  document.getElementById('us-exrate-time').textContent = `(${exDate})`;
+  const exRateEl = document.getElementById('us-exrate');
+  if (exRateEl) exRateEl.textContent = exRate.toLocaleString('ko-KR', {maximumFractionDigits: 0}) + '원';
 
-  // 프리마켓 / 애프터마켓 배지
-  const badge = document.getElementById('us-premarket-badge');
-  if (badge) badge.style.display = us.is_premarket ? 'inline' : 'none';
-  const abadge = document.getElementById('us-aftermarket-badge');
-  if (abadge) abadge.style.display = us.is_aftermarket ? 'inline' : 'none';
+  // 시장 상태 배지 — 하나만 표시
+  const _badgeIds = {
+    'us-market-badge-holiday':  us.is_weekend_holiday,
+    'us-market-badge-daytime':  us.is_daytime,
+    'us-premarket-badge':       us.is_premarket,
+    'us-market-badge-regular':  us.is_regular_market,
+    'us-aftermarket-badge':     us.is_aftermarket,
+  };
+  for (const [id, active] of Object.entries(_badgeIds)) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = active ? 'inline' : 'none';
+  }
 
   // 요약 카드
   const evalUsd   = us.total_eval_usd   || 0;

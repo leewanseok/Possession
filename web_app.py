@@ -807,6 +807,11 @@ def build_us_portfolio():
             "exchange_rate_updated_at": _exrate_cache.get("updated_at", ""),
             "is_premarket":      is_us_premarket   if _kis_api else False,
             "is_aftermarket":    is_us_aftermarket if _kis_api else False,
+            "is_weekend_holiday": is_weekend_holiday,
+            "is_regular_market": (not is_weekend_holiday and not is_us_premarket and not is_us_aftermarket
+                                  and (now_t >= market_open or now_t < market_close)),
+            "is_daytime":        (not is_weekend_holiday and not is_us_premarket and not is_us_aftermarket
+                                  and aftermarket_end <= now_t < premarket_start),
         }
     }
 
