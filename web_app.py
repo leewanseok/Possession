@@ -1547,6 +1547,7 @@ def _save_alert_state():
         print(f"[알림] alert_state 저장 실패: {e}")
 
 _alert_state: dict = _load_alert_state()
+_alert_state_lock = threading.Lock()  # _alert_state 멀티스레드 동시 접근 방지
 
 def _load_open_alert_date() -> str:
     try:
@@ -1599,61 +1600,67 @@ def _check_rate_alerts(holdings: list):
     """전일대비 등락률 5%·10%·15%… 임계값 최초 도달 시 1회 알림.
     임계값 아래로 내려갔다가 재돌파 시 직전 발송으로부터 1시간 경과 후에만 재발송."""
     now_ts = time.time()
-    for h in holdings:
-        code   = h.get("code", "")
-        name   = h.get("name", code)
-        rate   = h.get("change_rate", 0.0)
-        price  = h.get("current_price", 0)
-        change = h.get("change", 0)
-        buy_price = h.get("avg_price", 0)
-        eval_pnl  = h.get("profit_loss", 0)
-        eval_rate = h.get("profit_rate", 0.0)
+    # 발송할 메시지 목록을 먼저 수집 (락 외부에서 발송하여 락 보유 최소화)
+    to_send = []
 
-        if code not in _alert_state:
-            _alert_state[code] = {"pct_last_sent": {}, "pct_triggered": {}}
-        state = _alert_state[code]
-        if "pct_triggered" not in state:
-            state["pct_triggered"] = {}
+    with _alert_state_lock:
+        for h in holdings:
+            code   = h.get("code", "")
+            name   = h.get("name", code)
+            rate   = h.get("change_rate", 0.0)
+            price  = h.get("current_price", 0)
+            change = h.get("change", 0)
+            buy_price = h.get("avg_price", 0)
+            eval_pnl  = h.get("profit_loss", 0)
+            eval_rate = h.get("profit_rate", 0.0)
 
-        for thr in _ALERT_THRESHOLDS:
-            for sign, label in [(1, "상승"), (-1, "하락")]:
-                key = str(sign * thr)  # JSON 직렬화 후에도 문자열로 일관되게 유지
-                above = (sign == 1 and rate >= thr) or (sign == -1 and rate <= -thr)
+            if code not in _alert_state:
+                _alert_state[code] = {"pct_last_sent": {}, "pct_triggered": {}}
+            state = _alert_state[code]
+            if "pct_triggered" not in state:
+                state["pct_triggered"] = {}
 
-                if not above:
-                    # 임계값 아래로 내려오면 triggered 초기화 (재돌파 감지용)
-                    state["pct_triggered"].pop(key, None)
-                    continue
+            for thr in _ALERT_THRESHOLDS:
+                for sign, label in [(1, "상승"), (-1, "하락")]:
+                    key = str(sign * thr)
+                    above = (sign == 1 and rate >= thr) or (sign == -1 and rate <= -thr)
 
-                # 현재 임계값 이상이고 이미 이번 상승 구간에서 발송했으면 스킵
-                if state["pct_triggered"].get(key, False):
-                    continue
+                    if not above:
+                        state["pct_triggered"].pop(key, None)
+                        continue
 
-                # 새로운 돌파 - 직전 발송으로부터 1시간 쿨다운 확인
-                last_sent = state["pct_last_sent"].get(key, 0)
-                if now_ts - last_sent < _ALERT_COOLDOWN:
-                    # 쿨다운 중: 발송하지 않지만 triggered 표시 (중복 체크 방지)
+                    if state["pct_triggered"].get(key, False):
+                        continue
+
+                    last_sent = state["pct_last_sent"].get(key, 0)
+                    if now_ts - last_sent < _ALERT_COOLDOWN:
+                        state["pct_triggered"][key] = True
+                        continue
+
+                    # 발송 결정 — 락 내에서 플래그 선점 후 메시지 수집
+                    state["pct_last_sent"][key] = now_ts
                     state["pct_triggered"][key] = True
-                    continue
 
-                state["pct_last_sent"][key] = now_ts
-                state["pct_triggered"][key] = True
-                _save_alert_state()
+                    pnl_line = ""
+                    if buy_price:
+                        pnl_line = f"\n평가손익  <b>{'+' if eval_pnl>=0 else ''}{round(eval_pnl):,}원</b> ({eval_rate:+.2f}%)"
+                    msg = (
+                        f"<b>[{name}] 전일대비 {thr}% {label}</b>\n"
+                        f"{'─' * 20}\n"
+                        f"현재가   <b>{price:,}원</b>\n"
+                        f"전일대비  {'+' if change>=0 else ''}{change:,}원 ({rate:+.2f}%)"
+                        f"{pnl_line}\n"
+                        f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                    )
+                    to_send.append((name, thr, label, msg))
 
-                pnl_line = ""
-                if buy_price:
-                    pnl_line = f"\n평가손익  <b>{'+' if eval_pnl>=0 else ''}{round(eval_pnl):,}원</b> ({eval_rate:+.2f}%)"
+        if to_send:
+            _save_alert_state()
 
-                msg = (
-                    f"<b>[{name}] 전일대비 {thr}% {label}</b>\n"
-                    f"{'─' * 20}\n"
-                    f"현재가   <b>{price:,}원</b>\n"
-                    f"전일대비  {'+' if change>=0 else ''}{change:,}원 ({rate:+.2f}%)"
-                    f"{pnl_line}\n"
-                    f"{datetime.now().strftime('%Y-%m-%d %H:%M')}"
-                )
-                _tg_send(msg, msg_type="rate_alert")
-                print(f"[알림] {name} {thr}% {label} → 텔레그램 발송")
+    # 락 해제 후 텔레그램 발송 (네트워크 I/O는 락 밖에서)
+    for name, thr, label, msg in to_send:
+        _tg_send(msg, msg_type="rate_alert")
+        print(f"[알림] {name} {thr}% {label} → 텔레그램 발송")
 
 
 def _check_high_low_alerts(holdings: list):
@@ -1662,20 +1669,29 @@ def _check_high_low_alerts(holdings: list):
         return
     today   = datetime.now().strftime("%Y-%m-%d")
     now_str = datetime.now().strftime("%H:%M")
-    for h in holdings:
-        code  = h.get("code", "")
+
+    # 1단계: 오늘 OHLCV 조회가 필요한 종목 선별 (락 내에서 hl_checked 선점)
+    to_check = []
+    with _alert_state_lock:
+        for h in holdings:
+            code  = h.get("code", "")
+            price = h.get("current_price", 0)
+            if not price:
+                continue
+            if code not in _alert_state:
+                _alert_state[code] = {"pct_last_sent": {}}
+            state = _alert_state[code]
+            if state.get("hl_checked") == today:
+                continue
+            state["hl_checked"] = today   # 선점: 다른 스레드가 중복 API 호출 못 함
+            to_check.append((code, h))
+
+    # 2단계: API 호출 (락 밖에서, 느린 작업)
+    for code, h in to_check:
         name  = h.get("name", code)
         price = h.get("current_price", 0)
-        if not price:
-            continue
-
-        if code not in _alert_state:
-            _alert_state[code] = {"pct_last_sent": {}}
-        state = _alert_state[code]
-
-        if state.get("hl_checked") == today:
-            continue
-        state["hl_checked"] = today
+        rate  = h.get("change_rate", 0.0)
+        change = h.get("change", 0)
 
         to_dt = datetime.now().strftime("%Y%m%d")
         rows  = _kis_api._fetch_ohlcv_once(code,
@@ -1687,38 +1703,39 @@ def _check_high_low_alerts(holdings: list):
         prev     = rows[:-1]
         max_high = max(r["high"] for r in prev)
         min_low  = min(r["low"]  for r in prev)
-        rate     = h.get("change_rate", 0.0)
-        change   = h.get("change", 0)
 
-        if price > max_high and state.get("high_sent") != today:
-            state["high_sent"] = today
-            _save_alert_state()
-            diff = price - max_high
-            msg = (
-                f"<b>[{name}] 3개월 신고가 돌파</b>\n"
-                f"{'─' * 20}\n"
-                f"현재가   <b>{price:,}원</b>\n"
-                f"직전 고가  {max_high:,}원  (+{diff:,}원)\n"
-                f"전일대비  {'+' if change>=0 else ''}{change:,}원 ({rate:+.2f}%)\n"
-                f"{now_str}"
-            )
-            _tg_send(msg, msg_type="hl_alert")
-            print(f"[알림] {name} 3개월 신고가")
+        # 3단계: 발송 결정 (락 내에서 플래그 선점, 메시지 수집)
+        to_send = []
+        with _alert_state_lock:
+            state = _alert_state.get(code, {})
+            if price > max_high and state.get("high_sent") != today:
+                state["high_sent"] = today
+                _alert_state[code] = state
+                diff = price - max_high
+                to_send.append(("high", f"<b>[{name}] 3개월 신고가 돌파</b>\n"
+                    f"{'─' * 20}\n"
+                    f"현재가   <b>{price:,}원</b>\n"
+                    f"직전 고가  {max_high:,}원  (+{diff:,}원)\n"
+                    f"전일대비  {'+' if change>=0 else ''}{change:,}원 ({rate:+.2f}%)\n"
+                    f"{now_str}"))
+            if price < min_low and state.get("low_sent") != today:
+                state["low_sent"] = today
+                _alert_state[code] = state
+                diff = min_low - price
+                to_send.append(("low", f"<b>[{name}] 3개월 신저가 하락</b>\n"
+                    f"{'─' * 20}\n"
+                    f"현재가   <b>{price:,}원</b>\n"
+                    f"직전 저가  {min_low:,}원  (-{diff:,}원)\n"
+                    f"전일대비  {'+' if change>=0 else ''}{change:,}원 ({rate:+.2f}%)\n"
+                    f"{now_str}"))
+            if to_send:
+                _save_alert_state()
 
-        if price < min_low and state.get("low_sent") != today:
-            state["low_sent"] = today
-            _save_alert_state()
-            diff = min_low - price
-            msg = (
-                f"<b>[{name}] 3개월 신저가 하락</b>\n"
-                f"{'─' * 20}\n"
-                f"현재가   <b>{price:,}원</b>\n"
-                f"직전 저가  {min_low:,}원  (-{diff:,}원)\n"
-                f"전일대비  {'+' if change>=0 else ''}{change:,}원 ({rate:+.2f}%)\n"
-                f"{now_str}"
-            )
+        # 4단계: 텔레그램 발송 (락 밖에서)
+        for kind, msg in to_send:
             _tg_send(msg, msg_type="hl_alert")
-            print(f"[알림] {name} 3개월 신저가")
+            label = "3개월 신고가" if kind == "high" else "3개월 신저가"
+            print(f"[알림] {name} {label}")
 
 
 def _check_close_alert():
@@ -2310,16 +2327,19 @@ def _run_kr_websocket():
             if len(fields) < 6:
                 return
             try:
-                code     = fields[0]
-                cur      = int(fields[2])
-                chg_abs  = int(fields[4])      # WebSocket은 이미 부호 포함된 값
-                chg_rate = float(fields[5])    # (REST API와 달리 별도 sign 처리 불필요)
+                code      = fields[0]
+                cur       = int(fields[2])
+                sign_flag = fields[3]          # "2"=상승, "3"=보합, "4"=하한, "5"=하락
+                minus     = sign_flag in ("4", "5")
+                # abs() 후 부호 적용: signed/unsigned 입력 모두 올바르게 처리
+                chg      = -abs(int(fields[4]))   if minus else abs(int(fields[4]))
+                chg_rate = -abs(float(fields[5])) if minus else abs(float(fields[5]))
                 if cur <= 0:
                     return
                 with _kr_ws_lock:
                     _kr_ws_prices[code] = {
                         "current_price": cur,
-                        "change":        chg_abs,
+                        "change":        chg,
                         "change_rate":   chg_rate,
                     }
                 # 단일 push 스레드에 신호만 전달 (스레드 생성 없음)
