@@ -4536,9 +4536,19 @@ async function loadCombinedHistory() {
   } catch(e) {}
 }
 
+function _allRtDate() {
+  // 코인과 동일한 rt_date 기준: 09:00 이전 = 어제, 이후 = 오늘
+  const now = new Date();
+  if (now.getHours() < 9) {
+    const y = new Date(now); y.setDate(y.getDate() - 1);
+    return localDate(y);
+  }
+  return localDate(now);
+}
+
 function _updateAllTodayRow() {
   // 오늘 실시간 행만 갱신 — 차트는 건드리지 않음
-  const todayStr = localDate(new Date());
+  const todayStr = _allRtDate();  // 09:00 이전은 어제, 이후는 오늘 (코인과 동일)
   const kr   = _lastData?.kr  || {};
   const us   = _usData        || {};
   const coin = _coinPortfolioData || {};
@@ -4604,6 +4614,7 @@ function _updateAllTodayRow() {
 function renderAllHistoryTable() {
   const tbody    = document.getElementById('all-history-body');
   const todayStr = localDate(new Date());
+  const rtDate   = _allRtDate();  // 실시간 행 날짜 (09:00 이전=어제, 이후=오늘)
   let fromStr = '', toStr = todayStr;
 
   if (_allHistoryMonths > 0) {
@@ -4614,9 +4625,9 @@ function renderAllHistoryTable() {
     toStr   = document.getElementById('all-history-to').value   || todayStr;
   }
 
-  // 오늘 레코드는 항상 실시간으로 표시 → combined 저장본에서 오늘 제외
+  // rtDate 레코드는 실시간 행으로 대체 → combined 저장본에서 제외
   const filtered = _allCombinedHistory.filter(r => {
-    if (r.date === todayStr) return false;          // 오늘은 실시간 행으로 대체
+    if (r.date === rtDate) return false;
     if (fromStr && r.date < fromStr) return false;
     if (toStr   && r.date > toStr)   return false;
     return true;
@@ -4624,7 +4635,7 @@ function renderAllHistoryTable() {
 
   if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="6" class="empty">기록 없음</td></tr>';
-    // 오늘 행은 _updateAllTodayRow()가 담당
+    // 실시간 행은 _updateAllTodayRow()가 담당
     return;
   }
 
@@ -4644,8 +4655,8 @@ function renderAllHistoryTable() {
     </tr>`;
   }).join('');
 
-  // 오늘 행은 별도 함수로 (chart 재생성 없이 갱신 가능)
-  if (todayStr >= (fromStr || todayStr) && todayStr <= toStr) {
+  // 실시간 행은 별도 함수로 (chart 재생성 없이 갱신 가능)
+  if (rtDate >= (fromStr || rtDate) && rtDate <= toStr) {
     _updateAllTodayRow();
   }
 
