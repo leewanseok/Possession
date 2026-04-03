@@ -1604,6 +1604,10 @@ def _check_rate_alerts(holdings: list):
     # 다를 수 있으므로 이 구간에서는 알림 차단 (오발송 방지)
     if dtime(8, 50) <= now_t < dtime(9, 2):
         return
+    # NXT 종료(20:00) 이후: 데이터 소스가 NXT→KRX 종가로 전환되면서
+    # NXT에서 초기화된 pct_triggered 때문에 KRX 종가 기준 오발송 방지
+    if now_t >= dtime(20, 0):
+        return
 
     now_ts = time.time()
     # 발송할 메시지 목록을 먼저 수집 (락 외부에서 발송하여 락 보유 최소화)
