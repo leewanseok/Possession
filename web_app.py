@@ -1599,6 +1599,12 @@ def _save_nxt_close_alert_date(date: str):
 def _check_rate_alerts(holdings: list):
     """전일대비 등락률 5%·10%·15%… 임계값 최초 도달 시 1회 알림.
     임계값 아래로 내려갔다가 재돌파 시 직전 발송으로부터 1시간 경과 후에만 재발송."""
+    now_t = datetime.now().time()
+    # 동시호가(08:50~09:00) 및 개장 직후(09:00~09:02): 예상 시초가는 실제 체결가와
+    # 다를 수 있으므로 이 구간에서는 알림 차단 (오발송 방지)
+    if dtime(8, 50) <= now_t < dtime(9, 2):
+        return
+
     now_ts = time.time()
     # 발송할 메시지 목록을 먼저 수집 (락 외부에서 발송하여 락 보유 최소화)
     to_send = []
